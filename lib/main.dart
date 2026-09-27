@@ -498,13 +498,7 @@ class LinkBanner extends StatelessWidget {
   }
 }
 
-TextDirection _dirOf(String s) {
-  for (final r in s.runes) {
-    if (r >= 0x0600 && r <= 0x06FF) return TextDirection.rtl;
-    if ((r >= 0x41 && r <= 0x5A) || (r >= 0x61 && r <= 0x7A)) return TextDirection.ltr;
-  }
-  return TextDirection.rtl;
-}
+TextDirection _dirOf(String s) => dDirOf(s);
 
 class TopBar extends StatelessWidget {
   const TopBar({super.key, required this.store, required this.onMenu});
@@ -1250,6 +1244,11 @@ class _ComposerState extends State<Composer> {
     final effort = '${store.info['reasoning_effort'] ?? ''}';
     final canAct = ctl.text.trim().isNotEmpty || store.attachments.isNotEmpty;
     return Column(mainAxisSize: MainAxisSize.min, children: [
+      BackgroundStrip(
+        items: store.background,
+        onStop: store.stopBackground,
+        onDismiss: store.dismissBackground,
+      ),
       DReveal(
         show: store.queued.isNotEmpty,
         child: DCard(

@@ -32,6 +32,7 @@ Real captures from an Android phone, not mockups. Private session titles and dev
 - **Work with files:** attach files/images, preview received images and download/open generated files.
 - **Dictate prompts:** microphone recording with transcription through your configured backend.
 - **Keep work visible:** Android foreground connection service and local completion notifications while the process is alive.
+- **Watch background work:** a live panel above the composer lists long-running `terminal(background=true)` processes and delegated subagents for the open session, streams their output, and lets you stop a running one or dismiss a finished one.
 - **Connect privately:** use your own Hermes host through Tailscale; no public port forwarding is required.
 - **Sign in securely:** credentials stored with Flutter Secure Storage; optional biometric app unlock.
 

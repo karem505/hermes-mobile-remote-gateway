@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tb;
 
+import 'background.dart';
+
 /// Design tokens: a warm, Claude-Code-flavoured dark surface with soft depth.
 class D {
   static const bg = Color(0xFF141210);
@@ -80,6 +82,17 @@ class H {
     await Future.delayed(const Duration(milliseconds: 140));
     HapticFeedback.mediumImpact();
   }
+}
+
+
+/// Whether a value (command, path, tool name, Arabic copy) should lay out LTR.
+/// Shared with the chat surface so mixed-direction rows behave the same.
+TextDirection dDirOf(String s) {
+  for (final r in s.runes) {
+    if (r >= 0x0600 && r <= 0x06FF) return TextDirection.rtl;
+    if ((r >= 0x41 && r <= 0x5A) || (r >= 0x61 && r <= 0x7A)) return TextDirection.ltr;
+  }
+  return TextDirection.rtl;
 }
 
 typedef IconCtor = Widget Function({Color? color, double? width, double? height});
@@ -704,6 +717,264 @@ class DSegmented extends StatelessWidget {
             ]),
           ]);
         }),
+      ),
+    );
+  }
+}
+
+/// Live background work for the open session, shown above the composer:
+/// `terminal(background=true)` processes, delegated subagents and `/background`
+/// side agents. Collapsed to a one-line summary until the user opens it, so a
+/// long job stays visible without stealing the transcript.
+class BackgroundStrip extends StatefulWidget {
+  const BackgroundStrip({
+    super.key,
+    required this.items,
+    required this.onStop,
+    required this.onDismiss,
+  });
+
+  final List<BackgroundActivity> items;
+  final Future<void> Function(String id) onStop;
+  final void Function(String id) onDismiss;
+
+  @override
+  State<BackgroundStrip> createState() => _BackgroundStripState();
+}
+
+class _BackgroundStripState extends State<BackgroundStrip> {
+  bool open = false;
+  final detail = <String>{};
+
+  @override
+  Widget build(BuildContext context) {
+    final items = widget.items;
+    if (items.isEmpty) return const SizedBox.shrink();
+    final live = items.where((i) => i.running).length;
+    return DCard(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      pad: EdgeInsets.zero,
+      radius: D.rMd,
+      border: D.borderSoft,
+      shadow: D.soft,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        DPress(
+          scale: 0.985,
+          child: InkWell(
+            onTap: () => setState(() => open = !open),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 9, 8, 9),
+            child: Row(children: [
+              if (live > 0)
+                const _Pulse()
+              else
+                ic(tb.ActivityHeartbeat.new, size: 15, color: D.ok),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'النشاط في الخلفية (${items.length})',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: txt(12.5, weight: FontWeight.w600),
+                ),
+              ),
+              if (live > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 6),
+                  child: Text('$live قيد التشغيل', style: txt(11.5, color: D.accent)),
+                ),
+              const SizedBox(width: 4),
+                AnimatedRotation(
+                  turns: open ? 0.5 : 0,
+                  duration: D.tIn,
+                  curve: D.ease,
+                  child: ic(tb.ChevronDown.new, size: 16),
+                ),
+              ]),
+            ),
+          ),
+        ),
+        DCollapse(
+          open: open,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+            child: Column(children: [
+              for (final item in items)
+                _BackgroundRow(
+                  item: item,
+                  open: detail.contains(item.id),
+                  onToggle: () => setState(
+                    () => detail.contains(item.id) ? detail.remove(item.id) : detail.add(item.id),
+                  ),
+                  onStop: () => widget.onStop(item.id),
+                  onDismiss: () => widget.onDismiss(item.id),
+                ),
+            ]),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _BackgroundRow extends StatelessWidget {
+  const _BackgroundRow({
+    required this.item,
+    required this.open,
+    required this.onToggle,
+    required this.onStop,
+    required this.onDismiss,
+  });
+
+  final BackgroundActivity item;
+  final bool open;
+  final VoidCallback onToggle;
+  final VoidCallback onStop;
+  final VoidCallback onDismiss;
+
+  String get _status => switch (item.state) {
+        BackgroundState.running => item.kind == 'subagent' ? 'يعمل الآن' : 'قيد التشغيل',
+        BackgroundState.done => 'انتهى',
+        BackgroundState.failed => item.exitCode == null ? 'فشل' : 'فشل (رمز ${item.exitCode})',
+      };
+
+  Color get _tone => switch (item.state) {
+        BackgroundState.running => D.accent,
+        BackgroundState.done => D.ok,
+        BackgroundState.failed => D.danger,
+      };
+
+  IconCtor get _icon => switch (item.kind) {
+        'subagent' => tb.BinaryTree.new,
+        'agent' => tb.Robot.new,
+        _ => tb.Terminal2.new,
+      };
+
+  String get _meta => [
+        _status,
+        if (item.subtitle.isNotEmpty && item.running) item.subtitle,
+        if (item.model != null && item.model!.isNotEmpty) item.model!,
+        if (item.toolCount != null && item.toolCount! > 0) 'أدوات: ${item.toolCount}',
+      ].join(' · ');
+
+  @override
+  Widget build(BuildContext context) {
+    final hasDetail = item.detail.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Container(
+        decoration: BoxDecoration(
+          color: D.surfaceHi.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(D.rSm),
+        ),
+        child: Column(children: [
+          DPress(
+            scale: 0.99,
+            child: InkWell(
+              onTap: hasDetail ? onToggle : null,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+              child: Row(children: [
+                ic(_icon, size: 15, color: _tone),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: dDirOf(item.title),
+                      style: txt(12.5, weight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _meta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: dDirOf(_meta),
+                      style: txt(11, color: item.state == BackgroundState.failed ? D.danger : D.muted),
+                    ),
+                  ]),
+                ),
+                const SizedBox(width: 6),
+                if (item.running)
+                  DIconBtn(
+                    icon: tb.PlayerStop.new,
+                    size: 30,
+                    tooltip: 'إيقاف',
+                    tint: D.danger,
+                    onPressed: onStop,
+                  )
+                else
+                  DIconBtn(
+                    icon: tb.X.new,
+                    size: 30,
+                    tooltip: 'تجاهل',
+                    onPressed: onDismiss,
+                  ),
+                ]),
+              ),
+            ),
+          ),
+          DCollapse(
+            open: open && hasDetail,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+              child: Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: 160),
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: D.bg.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(D.rSm),
+                  border: Border.all(color: D.borderSoft),
+                ),
+                child: SingleChildScrollView(
+                  child: Text(
+                    item.detail.trim(),
+                    textDirection: dDirOf(item.detail),
+                    style: txt(11.5, color: D.muted, height: 1.4),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Small breathing dot: a running background job still reads as alive when the
+/// transcript itself is idle.
+class _Pulse extends StatefulWidget {
+  const _Pulse();
+
+  @override
+  State<_Pulse> createState() => _PulseState();
+}
+
+class _PulseState extends State<_Pulse> with SingleTickerProviderStateMixin {
+  late final AnimationController c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.45, end: 1).animate(CurvedAnimation(parent: c, curve: Curves.easeInOut)),
+      child: Container(
+        width: 9,
+        height: 9,
+        margin: const EdgeInsets.symmetric(horizontal: 3),
+        decoration: const BoxDecoration(color: D.accent, shape: BoxShape.circle),
       ),
     );
   }
