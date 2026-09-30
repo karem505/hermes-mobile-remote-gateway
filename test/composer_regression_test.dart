@@ -160,7 +160,8 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('توجيه').hitTestable(), findsOneWidget);
       expect(find.text('إلى الطابور').hitTestable(), findsOneWidget);
-      expect(find.text('Thinking: Extra high'), findsOneWidget);
+      // The model chip keeps the English Thinking level visible even when narrow.
+      expect(find.text('Extra high').hitTestable(), findsOneWidget);
       expect(find.text('queued.pdf'), findsOneWidget);
       expect(find.text('draft.png'), findsOneWidget);
       final card = find

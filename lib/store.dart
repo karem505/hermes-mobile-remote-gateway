@@ -24,6 +24,14 @@ class ChatItem {
   String detail;
   bool done;
   double? duration;
+
+  /// When the item appeared locally: drives the live timer on a running tool
+  /// and the "thought for Ns" label once a thinking block closes.
+  final DateTime started = DateTime.now();
+
+  /// Seconds a live thinking block ran; null for history, where the server
+  /// does not report it.
+  int? seconds;
 }
 
 class ActiveSession {
@@ -618,6 +626,16 @@ class HermesStore extends ChangeNotifier {
     return null;
   }
 
+  /// Whether the current turn (items after the last user message) already
+  /// shows a thinking block.
+  bool _turnHasThinking() {
+    for (final it in items.reversed) {
+      if (it.kind == 'user') return false;
+      if (it.kind == 'thinking') return true;
+    }
+    return false;
+  }
+
   // ---------------------------------------------------------------- background
   // Live background work for the open session (desktop parity): the gateway's
   // process registry plus delegated subagents, merged into one strip above the
@@ -805,6 +823,9 @@ class HermesStore extends ChangeNotifier {
 
   void _onEvent(Map<String, dynamic> e) {
     final type = '${e['type']}';
+    // Off by default; a diagnostic build passes --dart-define=HERMES_TRACE_EVENTS=true.
+    // Logs the event type only, never the payload.
+    if (const bool.fromEnvironment('HERMES_TRACE_EVENTS')) debugPrint('EVT $type');
     final payload = (e['payload'] is Map) ? Map<String, dynamic>.from(e['payload'] as Map) : <String, dynamic>{};
     if (type == 'sessions.changed') {
       _debounceSessions();
@@ -849,7 +870,14 @@ class HermesStore extends ChangeNotifier {
         running = true;
         statusText = 'يفكر...';
         items.add(ChatItem.assistant(''));
-      case 'reasoning.delta' || 'thinking.delta':
+      case 'thinking.delta':
+        // Spinner rewrites ("(◔_◔) ruminating...") and provider-wait notices,
+        // not reasoning: status line only (desktop does the same). Treating
+        // them as transcript thinking split a streaming reply in two.
+        running = true;
+        final t = '${payload['text'] ?? ''}'.trim();
+        if (t.isNotEmpty) statusText = t;
+      case 'reasoning.delta':
         running = true;
         statusText = 'يفكر...';
         final t = '${payload['text'] ?? ''}';
@@ -862,8 +890,19 @@ class HermesStore extends ChangeNotifier {
           items.add(ChatItem.thinking(t));
         }
       case 'reasoning.available':
+        // The full reasoning can arrive after the reply started streaming. It
+        // belongs to this turn: skip it when the turn already streamed its
+        // thinking, and never append it after the reply (that orphaned the
+        // reply, so message.complete then added a second copy).
         final t = '${payload['text'] ?? ''}';
-        if (t.isNotEmpty && !items.any((i) => i.kind == 'thinking' && !i.done)) items.add(ChatItem.thinking(t)..done = true);
+        if (t.isEmpty || _turnHasThinking()) break;
+        final block = ChatItem.thinking(t)..done = true;
+        final target = _streamTarget();
+        if (target != null) {
+          items.insert(items.length - 1, block);
+        } else {
+          items.add(block);
+        }
       case 'message.delta':
         _closeThinking();
         statusText = 'يكتب الرد...';
@@ -937,8 +976,26 @@ class HermesStore extends ChangeNotifier {
 
   void _closeThinking() {
     for (final it in items.reversed) {
-      if (it.kind == 'thinking' && !it.done) it.done = true;
+      if (it.kind == 'thinking' && !it.done) {
+        it.done = true;
+        it.seconds = DateTime.now().difference(it.started).inSeconds;
+      }
     }
+  }
+
+  /// A prompt the UI asked to place in the composer (suggestion chips). The
+  /// composer consumes it once; nothing is sent until the user presses send.
+  String? draftRequest;
+
+  void requestDraft(String text) {
+    draftRequest = text;
+    notifyListeners();
+  }
+
+  String? takeDraft() {
+    final d = draftRequest;
+    draftRequest = null;
+    return d;
   }
 
   Timer? _sessTimer;

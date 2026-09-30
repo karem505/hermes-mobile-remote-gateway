@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tb;
@@ -6,18 +8,32 @@ import 'background.dart';
 
 /// Design tokens: a warm, Claude-Code-flavoured dark surface with soft depth.
 class D {
+  // Surface ladder: each step is one even notch brighter, so layering reads
+  // as depth without heavy borders or shadows.
   static const bg = Color(0xFF141210);
-  static const surface = Color(0xFF1E1B19);
-  static const surfaceHi = Color(0xFF272322);
-  static const border = Color(0xFF312D2A);
-  static const borderSoft = Color(0xFF272322);
+  static const surface = Color(0xFF1C1917);
+  static const surfaceHi = Color(0xFF262220);
+  static const surfaceTop = Color(0xFF312C29);
+  static const border = Color(0xFF3A3431);
+  // Hairlines are translucent warm white: always a touch lighter than
+  // whatever they sit on, so one token works on bg, cards and chips.
+  static const borderSoft = Color(0x14F3EEEA);
+  static const hairline = Color(0x1FF3EEEA);
   static const fg = Color(0xFFF3EEEA);
   static const muted = Color(0xFFA49D96);
+  static const faint = Color(0xFF7A726C); // tertiary: section labels, counts, timestamps
+  static const onAccent = Color(0xFFFFF7F3);
   static const accent = Color(0xFFD97757);
   static const accentDim = Color(0xFF9A5540);
   static const accentWash = Color(0xFF2E211C);
   static const ok = Color(0xFF8FAE84);
   static const danger = Color(0xFFC8564B);
+  static const info = Color(0xFFB9A48A); // waiting / queued: warm, not alarming
+
+  /// Your own messages: a quiet raised fill, so coral stays reserved for
+  /// actions (send, selected, live) instead of every line you typed.
+  static const bubble = Color(0xFF282422);
+  static const rail = Color(0xFF3A3431);
 
   // Motion: fast in, quicker out, one smooth-out curve for every surface.
   static const tIn = Duration(milliseconds: 260);
@@ -36,10 +52,10 @@ class D {
   static const rPill = 999.0;
 
   static const soft = [
-    BoxShadow(color: Color(0x66000000), blurRadius: 16, offset: Offset(0, 6)),
+    BoxShadow(color: Color(0x4D000000), blurRadius: 14, offset: Offset(0, 4)),
   ];
   static const lift = [
-    BoxShadow(color: Color(0x8A000000), blurRadius: 26, offset: Offset(0, 12)),
+    BoxShadow(color: Color(0x80000000), blurRadius: 32, offset: Offset(0, 14)),
   ];
 }
 
@@ -112,8 +128,8 @@ class DCard extends StatelessWidget {
     this.margin = EdgeInsets.zero,
     this.color = D.surface,
     this.radius = D.rMd,
-    this.shadow = D.soft,
-    this.border,
+    this.shadow = const [],
+    this.border = D.borderSoft,
     this.width,
   });
 
@@ -166,11 +182,12 @@ class DBtn extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
     final fg = !enabled
-        ? D.muted
+        ? D.faint
         : switch (kind) {
-            DBtnKind.fill => const Color(0xFFFFF7F3),
+            DBtnKind.fill => D.onAccent,
             DBtnKind.outline => D.fg,
             DBtnKind.ghost => D.muted,
+            DBtnKind.danger => D.onAccent,
           };
     return DPress(
       onTap: onPressed,
@@ -182,11 +199,11 @@ class DBtn extends StatelessWidget {
       decoration: BoxDecoration(
         color: switch (kind) {
           DBtnKind.fill => enabled ? D.accent : D.surfaceHi,
-          DBtnKind.outline => Colors.transparent,
+          DBtnKind.outline => D.surfaceHi,
           DBtnKind.ghost => Colors.transparent,
+          DBtnKind.danger => enabled ? D.danger : D.surfaceHi,
         },
         borderRadius: BorderRadius.circular(D.rPill),
-        boxShadow: kind == DBtnKind.fill && enabled ? D.soft : const [],
       ),
       child: Material(
       color: Colors.transparent,
@@ -195,12 +212,13 @@ class DBtn extends StatelessWidget {
         borderRadius: BorderRadius.circular(D.rPill),
         onTap: onPressed,
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: dense ? 12 : 16, vertical: dense ? 7 : 10),
+          constraints: BoxConstraints(minHeight: dense ? 32 : 44),
+          padding: EdgeInsets.symmetric(horizontal: dense ? 12 : 18, vertical: dense ? 6 : 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(D.rPill),
-            border: kind == DBtnKind.outline ? Border.all(color: D.border) : null,
+            border: kind == DBtnKind.outline ? Border.all(color: D.borderSoft) : null,
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
+          child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
             if (icon != null) ic(icon!, size: dense ? 14 : 16, color: fg),
             if (icon != null) const SizedBox(width: 6),
             Flexible(child: Text(label, textAlign: TextAlign.center, style: txt(dense ? 12.5 : 14, color: fg, weight: FontWeight.w600))),
@@ -213,7 +231,7 @@ class DBtn extends StatelessWidget {
   }
 }
 
-enum DBtnKind { fill, outline, ghost }
+enum DBtnKind { fill, outline, ghost, danger }
 
 /// Round icon button: quiet by default, accent-tinted with a soft glow.
 class DIconBtn extends StatelessWidget {
@@ -241,7 +259,7 @@ class DIconBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = primary ? (active ? D.danger : D.accent) : (active ? D.accentWash : D.surfaceHi);
-    final fg = primary ? const Color(0xFFFFF7F3) : (active ? D.accent : (tint ?? D.fg));
+    final fg = primary ? D.onAccent : (active ? D.accent : (tint ?? D.fg));
     final b = DPress(
       onTap: onPressed,
       scale: 0.88,
@@ -254,7 +272,6 @@ class DIconBtn extends StatelessWidget {
         decoration: BoxDecoration(
           color: onPressed == null ? D.surfaceHi.withValues(alpha: 0.5) : bg,
           shape: BoxShape.circle,
-          boxShadow: primary && onPressed != null ? D.soft : const [],
         ),
         child: Material(
           color: Colors.transparent,
@@ -265,7 +282,7 @@ class DIconBtn extends StatelessWidget {
             child: Center(
               child: DSwap(
                 id: '${icon.hashCode}-${onPressed == null}',
-                child: ic(icon, size: size * 0.45, color: onPressed == null ? D.border : fg),
+                child: ic(icon, size: size * 0.45, color: onPressed == null ? D.faint : fg),
               ),
             ),
           ),
@@ -314,7 +331,7 @@ class DChip extends StatelessWidget {
           decoration: BoxDecoration(
             color: active ? D.accentWash : D.surfaceHi,
             borderRadius: BorderRadius.circular(D.rPill),
-            border: Border.all(color: active ? D.accentDim : D.borderSoft),
+            border: Border.all(color: active ? D.accentDim.withValues(alpha: 0.6) : D.borderSoft),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             if (icon != null) ic(icon!, size: 14, color: active ? D.accent : D.muted),
@@ -347,7 +364,7 @@ class DInput extends StatelessWidget {
   const DInput({
     super.key,
     required this.child,
-    this.pad = const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+    this.pad = const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
   });
 
   final Widget child;
@@ -357,9 +374,11 @@ class DInput extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: pad,
+      constraints: const BoxConstraints(minHeight: 44),
+      alignment: AlignmentDirectional.centerStart,
       decoration: BoxDecoration(
-        color: D.bg,
-        borderRadius: BorderRadius.circular(D.rSm),
+        color: D.surfaceHi,
+        borderRadius: BorderRadius.circular(D.rMd),
         border: Border.all(color: D.borderSoft),
       ),
       child: child,
@@ -377,11 +396,10 @@ class DSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 16, 6, 8),
+      padding: const EdgeInsets.fromLTRB(12, 20, 12, 6),
       child: Row(children: [
         Expanded(
-          child: Text(title.toUpperCase(),
-              style: txt(11, color: D.muted, weight: FontWeight.w700)),
+          child: Text(title, style: txt(12, color: D.faint, weight: FontWeight.w600, height: 1.3)),
         ),
         ?trailing,
       ]),
@@ -423,16 +441,23 @@ class DDialog extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
           decoration: BoxDecoration(color: D.surface,
-            borderRadius: BorderRadius.circular(24), boxShadow: D.lift),
+            borderRadius: BorderRadius.circular(26), boxShadow: D.lift,
+            border: Border.all(color: D.borderSoft)),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Padding(padding: const EdgeInsets.only(top: 4),
-                child: ic(_noticeIcon(kind), size: 22, color: _noticeColor(kind))),
-              const SizedBox(width: 10),
+            Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              Container(
+                width: 38, height: 38,
+                decoration: BoxDecoration(
+                  color: _noticeColor(kind).withValues(alpha: 0.14),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(child: ic(_noticeIcon(kind), size: 19, color: _noticeColor(kind))),
+              ),
+              const SizedBox(width: 12),
               Expanded(child: Semantics(namesRoute: true, header: true,
-                child: Text(title, style: txt(17, weight: FontWeight.w700)))),
+                child: Text(title, style: txt(17, weight: FontWeight.w700, height: 1.35)))),
               IconButton(tooltip: 'إغلاق', visualDensity: VisualDensity.compact,
                 constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
                 icon: ic(tb.X.new, size: 18), onPressed: () => Navigator.of(context).maybePop()),
@@ -442,7 +467,12 @@ class DDialog extends StatelessWidget {
               child: SelectableText(body, style: txt(13.5, color: D.muted, height: 1.65)))),
             if (actions.isNotEmpty) ...[
               const SizedBox(height: 20),
-              Wrap(spacing: 8, runSpacing: 10, alignment: WrapAlignment.end, children: actions),
+              // Stacked, full width, decision first: long Arabic labels never
+              // wrap mid-button and there is no left/right ambiguity in RTL.
+              for (final (i, a) in actions.reversed.indexed) ...[
+                if (i > 0) const SizedBox(height: 8),
+                SizedBox(width: double.infinity, child: a),
+              ],
             ],
           ]),
         ),
@@ -460,14 +490,16 @@ class DFeedback {
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(SnackBar(
       behavior: SnackBarBehavior.floating,
-      backgroundColor: D.surfaceHi,
-      elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      duration: Duration(seconds: tone == DNoticeKind.error ? 7 : 4),
-      showCloseIcon: true, closeIconColor: D.muted,
+      backgroundColor: D.surfaceTop,
+      elevation: 6,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: D.borderSoft)),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      duration: Duration(seconds: tone == DNoticeKind.error ? 7 : 3),
+      showCloseIcon: tone == DNoticeKind.error, closeIconColor: D.muted,
       content: Semantics(liveRegion: true, child: Row(children: [
-        ic(_noticeIcon(tone), size: 21, color: _noticeColor(tone)),
+        ic(_noticeIcon(tone), size: 18, color: _noticeColor(tone)),
         const SizedBox(width: 10),
         Expanded(child: Text(message, maxLines: 4, overflow: TextOverflow.ellipsis,
           style: txt(13, height: 1.5))),
@@ -652,6 +684,72 @@ class DCollapse extends StatelessWidget {
   }
 }
 
+/// Fenced code in an answer: a header with the language and a copy action,
+/// then the code, always LTR and horizontally scrollable so long lines never
+/// wrap mid-token.
+class DCodeBlock extends StatelessWidget {
+  const DCodeBlock({super.key, required this.language, required this.code, required this.onCopy});
+  final String language;
+  final String code;
+  final VoidCallback onCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = language.trim().isEmpty ? 'code' : language.trim();
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF100E0D),
+        borderRadius: BorderRadius.circular(D.rMd),
+        border: Border.all(color: D.borderSoft),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            padding: const EdgeInsetsDirectional.fromSTEB(14, 2, 4, 2),
+            decoration: const BoxDecoration(
+              color: D.surface,
+              border: Border(bottom: BorderSide(color: D.borderSoft)),
+            ),
+            child: Row(children: [
+              Expanded(child: Text(lang, style: txt(11.5, color: D.faint, weight: FontWeight.w600, height: 1.2))),
+              Tooltip(
+                message: 'نسخ',
+                child: DPress(
+                  onTap: onCopy,
+                  haptic: Hx.select,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onCopy,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        ic(tb.Copy.new, size: 14, color: D.muted),
+                        const SizedBox(width: 5),
+                        Text('Copy', style: txt(11.5, color: D.muted, weight: FontWeight.w500, height: 1.2)),
+                      ]),
+                    ),
+                  ),
+                ),
+              ),
+            ]),
+          ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            child: SelectableText(
+              code.trimRight(),
+              style: txt(12.5, color: D.fg, height: 1.55).copyWith(fontFamily: 'monospace'),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
 /// Segmented control whose highlight pill slides between options.
 class DSegmented extends StatelessWidget {
   const DSegmented({super.key, required this.options, required this.labels, required this.value, required this.onChanged});
@@ -666,9 +764,13 @@ class DSegmented extends StatelessWidget {
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Container(
-        height: 40,
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(color: D.bg, borderRadius: BorderRadius.circular(D.rPill)),
+        height: 42,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: D.bg,
+          borderRadius: BorderRadius.circular(D.rPill),
+          border: Border.all(color: D.borderSoft),
+        ),
         child: LayoutBuilder(builder: (context, c) {
           final w = c.maxWidth / options.length;
           return Stack(children: [
@@ -684,8 +786,9 @@ class DSegmented extends StatelessWidget {
                 duration: D.tIn,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: D.accent,
+                    color: D.surfaceTop,
                     borderRadius: BorderRadius.circular(D.rPill),
+                    border: Border.all(color: D.hairline),
                     boxShadow: D.soft,
                   ),
                 ),
@@ -705,8 +808,8 @@ class DSegmented extends StatelessWidget {
                         child: AnimatedDefaultTextStyle(
                           duration: D.tIn,
                           curve: D.ease,
-                          style: txt(12,
-                              color: i == idx ? Colors.white : D.muted,
+                          style: txt(12.5,
+                              color: i == idx ? D.fg : D.muted,
                               weight: i == idx ? FontWeight.w700 : FontWeight.w500),
                           child: Text(labels[i], maxLines: 1),
                         ),
@@ -726,6 +829,320 @@ class DSegmented extends StatelessWidget {
 /// `terminal(background=true)` processes, delegated subagents and `/background`
 /// side agents. Collapsed to a one-line summary until the user opens it, so a
 /// long job stays visible without stealing the transcript.
+/// One line of agent work inside the transcript: a tool call, a thinking block
+/// or a background job. Leading icon, label, quiet detail, trailing state.
+/// Tapping expands the body when there is one; the row never becomes a card.
+class DStepRow extends StatelessWidget {
+  const DStepRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.detail = '',
+    this.trailing,
+    this.open = false,
+    this.onTap,
+    this.body,
+    this.tone = D.muted,
+    this.labelDirection,
+  });
+
+  final IconCtor icon;
+  final String label;
+  final String detail;
+  final Widget? trailing;
+  final bool open;
+  final VoidCallback? onTap;
+  final Widget? body;
+  final Color tone;
+  final TextDirection? labelDirection;
+
+  @override
+  Widget build(BuildContext context) {
+    final expandable = body != null && onTap != null;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
+      Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(D.rSm),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(D.rSm),
+          onTap: onTap == null
+              ? null
+              : () {
+                  H.fire(Hx.select);
+                  onTap!();
+                },
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 36),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+              child: Row(children: [
+                ic(icon, size: 15, color: tone),
+                const SizedBox(width: 9),
+                Flexible(
+                  flex: 0,
+                  child: Text(label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: labelDirection ?? dDirOf(label),
+                      style: txt(12.5, color: D.fg, weight: FontWeight.w500)),
+                ),
+                if (detail.isNotEmpty) const SizedBox(width: 8),
+                Expanded(
+                  child: detail.isEmpty
+                      ? const SizedBox.shrink()
+                      : Text(detail,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: dDirOf(detail),
+                          style: txt(12, color: D.muted)),
+                ),
+                if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+                if (expandable) ...[
+                  const SizedBox(width: 6),
+                  AnimatedRotation(
+                    turns: open ? 0.5 : 0,
+                    duration: open ? D.tIn : D.tOut,
+                    curve: open ? D.ease : D.easeIn,
+                    child: ic(tb.ChevronDown.new, size: 14),
+                  ),
+                ],
+              ]),
+            ),
+          ),
+        ),
+      ),
+      if (body != null)
+        DCollapse(
+          open: open,
+          child: Container(
+            margin: const EdgeInsetsDirectional.only(start: 9, top: 2, bottom: 6),
+            padding: const EdgeInsetsDirectional.only(start: 14),
+            decoration: const BoxDecoration(
+              border: BorderDirectional(start: BorderSide(color: D.rail, width: 1)),
+            ),
+            child: body,
+          ),
+        ),
+    ]);
+  }
+}
+
+/// Seconds since [from], refreshed every second while mounted: the live
+/// counter on a running step.
+class DElapsed extends StatefulWidget {
+  const DElapsed({super.key, required this.from, this.style});
+  final DateTime from;
+  final TextStyle? style;
+  @override
+  State<DElapsed> createState() => _DElapsedState();
+}
+
+class _DElapsedState extends State<DElapsed> {
+  Timer? t;
+  @override
+  void initState() {
+    super.initState();
+    t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = DateTime.now().difference(widget.from).inSeconds;
+    return Text(dSeconds(s), textDirection: TextDirection.ltr, style: widget.style ?? txt(11, color: D.muted));
+  }
+}
+
+/// Compact duration, always Latin digits: 8s, 1m 04s.
+String dSeconds(num s) {
+  final n = s.round();
+  if (n < 60) return '${n}s';
+  return '${n ~/ 60}m ${(n % 60).toString().padLeft(2, '0')}s';
+}
+
+/// Quiet row of icon actions under an assistant reply (copy, and more later).
+class DActionRow extends StatelessWidget {
+  const DActionRow({super.key, required this.actions, this.textDirection});
+  final List<(IconCtor, String, VoidCallback)> actions;
+  /// Follows the reply it belongs to, so the actions sit under the text's
+  /// starting edge (left for an English answer, right for Arabic).
+  final TextDirection? textDirection;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Transform.translate(
+      offset: const Offset(0, -6),
+      child: Row(children: [
+        for (final (icon, label, onTap) in actions)
+          Tooltip(
+            message: label,
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () {
+                  H.fire(Hx.light);
+                  onTap();
+                },
+                child: SizedBox(width: 40, height: 40, child: Center(child: ic(icon, size: 16, color: D.faint))),
+              ),
+            ),
+          ),
+      ]),
+    );
+    return textDirection == null ? row : Directionality(textDirection: textDirection!, child: row);
+  }
+}
+
+/// Short model name for chips and rows: drops the vendor prefix and a trailing
+/// date stamp. The full identifier stays visible in the picker's second line.
+String dModelShort(String id) {
+  var s = id.contains('/') ? id.split('/').last : id;
+  s = s.replaceFirst(RegExp(r'[-_]?(20\d{6}|\d{6,8})$'), '');
+  return s.isEmpty ? id : s;
+}
+
+/// The one composer control for the model and its Thinking level:
+/// "deepseek-v4-1-flash · Max". English, LTR, opens the model sheet.
+class DModelChip extends StatelessWidget {
+  const DModelChip({super.key, required this.model, required this.effort, this.onTap});
+  final String model;
+  final String effort;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = model.isEmpty ? 'Model' : dModelShort(model);
+    return DPress(
+      scale: 0.96,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(D.rPill),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(D.rPill),
+          onTap: onTap == null
+              ? null
+              : () {
+                  H.fire(Hx.select);
+                  onTap!();
+                },
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 40),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: D.surfaceHi,
+              borderRadius: BorderRadius.circular(D.rPill),
+            ),
+            child: Directionality(
+              textDirection: TextDirection.ltr,
+              // Wide: one line "name · level". Narrow (most phones once attach,
+              // commands, voice and send take their share): name over level.
+              // Very narrow (steer controls showing, large text): level only.
+              child: LayoutBuilder(builder: (context, box) {
+                final brain = ic(tb.Brain.new, size: 13, color: effort == 'Default' ? D.muted : D.accent);
+                final level = Text(effort,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: txt(12.5, color: D.muted, weight: FontWeight.w500, height: 1.2));
+                if (box.maxWidth >= 230) {
+                  return Row(mainAxisSize: MainAxisSize.min, children: [
+                    Flexible(
+                      child: Text(name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: txt(12.5, weight: FontWeight.w600, height: 1.2)),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Text('·', style: txt(12.5, color: D.muted, height: 1.2)),
+                    ),
+                    brain,
+                    const SizedBox(width: 4),
+                    level,
+                    const SizedBox(width: 2),
+                    ic(tb.ChevronDown.new, size: 13),
+                  ]);
+                }
+                if (box.maxWidth >= 96) {
+                  return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: txt(12, weight: FontWeight.w600, height: 1.15)),
+                    const SizedBox(height: 1),
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      ic(tb.Brain.new, size: 11, color: effort == 'Default' ? D.muted : D.accent),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(effort,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: txt(10.5, color: D.muted, weight: FontWeight.w500, height: 1.15)),
+                      ),
+                    ]),
+                  ]);
+                }
+                return Row(mainAxisSize: MainAxisSize.min, children: [
+                  brain,
+                  const SizedBox(width: 4),
+                  Flexible(child: level),
+                ]);
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Suggestion chip on the empty state: tapping fills the composer, never sends.
+class DSuggestion extends StatelessWidget {
+  const DSuggestion({super.key, required this.icon, required this.label, required this.onTap});
+  final IconCtor icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return DPress(
+      scale: 0.97,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(D.rMd),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(D.rMd),
+          onTap: () {
+            H.fire(Hx.select);
+            onTap();
+          },
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 44),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(D.rMd),
+              border: Border.all(color: D.border),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              ic(icon, size: 16),
+              const SizedBox(width: 10),
+              Flexible(child: Text(label, style: txt(13.5, height: 1.35))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class BackgroundStrip extends StatefulWidget {
   const BackgroundStrip({
     super.key,
@@ -780,8 +1197,13 @@ class _BackgroundStripState extends State<BackgroundStrip> {
               ),
               if (live > 0)
                 Padding(
-                  padding: const EdgeInsets.only(left: 6),
+                  padding: const EdgeInsetsDirectional.only(end: 6),
                   child: Text('$live قيد التشغيل', style: txt(11.5, color: D.accent)),
+                )
+              else if (items.any((i) => i.state == BackgroundState.failed))
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 6),
+                  child: Text('يوجد فشل', style: txt(11.5, color: D.danger)),
                 ),
               const SizedBox(width: 4),
                 AnimatedRotation(
@@ -850,6 +1272,14 @@ class _BackgroundRow extends StatelessWidget {
         _ => tb.Terminal2.new,
       };
 
+  /// Leading state glyph: spinner while running, check when done, x on failure.
+  Widget get _glyph => switch (item.state) {
+        BackgroundState.running => const SizedBox(
+            width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.6, color: D.accent)),
+        BackgroundState.done => ic(tb.CircleCheck.new, size: 16, color: D.ok),
+        BackgroundState.failed => ic(tb.CircleX.new, size: 16, color: D.danger),
+      };
+
   String get _meta => [
         _status,
         if (item.subtitle.isNotEmpty && item.running) item.subtitle,
@@ -864,19 +1294,20 @@ class _BackgroundRow extends StatelessWidget {
       padding: const EdgeInsets.only(top: 4),
       child: Container(
         decoration: BoxDecoration(
-          color: D.surfaceHi.withValues(alpha: 0.5),
+          color: D.surfaceHi.withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(D.rSm),
         ),
         child: Column(children: [
           DPress(
             scale: 0.99,
             child: InkWell(
+              borderRadius: BorderRadius.circular(D.rSm),
               onTap: hasDetail ? onToggle : null,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+                padding: const EdgeInsetsDirectional.fromSTEB(12, 8, 6, 8),
               child: Row(children: [
-                ic(_icon, size: 15, color: _tone),
-                const SizedBox(width: 8),
+                SizedBox(width: 18, child: Center(child: _glyph)),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(
@@ -887,20 +1318,26 @@ class _BackgroundRow extends StatelessWidget {
                       style: txt(12.5, weight: FontWeight.w600),
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      _meta,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textDirection: dDirOf(_meta),
-                      style: txt(11, color: item.state == BackgroundState.failed ? D.danger : D.muted),
-                    ),
+                    Row(children: [
+                      ic(_icon, size: 12, color: _tone),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          _meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: dDirOf(_meta),
+                          style: txt(11, color: item.state == BackgroundState.failed ? D.danger : D.muted),
+                        ),
+                      ),
+                    ]),
                   ]),
                 ),
                 const SizedBox(width: 6),
                 if (item.running)
                   DIconBtn(
                     icon: tb.PlayerStop.new,
-                    size: 30,
+                    size: 36,
                     tooltip: 'إيقاف',
                     tint: D.danger,
                     onPressed: onStop,
@@ -908,7 +1345,7 @@ class _BackgroundRow extends StatelessWidget {
                 else
                   DIconBtn(
                     icon: tb.X.new,
-                    size: 30,
+                    size: 36,
                     tooltip: 'تجاهل',
                     onPressed: onDismiss,
                   ),

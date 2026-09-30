@@ -74,19 +74,19 @@ ShadColorScheme _scheme() => const ShadColorScheme(
       popover: kCard,
       popoverForeground: kFg,
       primary: D.accent,
-      primaryForeground: Color(0xFFFCFCFC),
+      primaryForeground: D.onAccent,
       secondary: D.surfaceHi,
       secondaryForeground: kFg,
       muted: D.surfaceHi,
       mutedForeground: kMfg,
       accent: D.surfaceHi,
       accentForeground: kFg,
-      destructive: Color(0xFFEF4444),
-      destructiveForeground: Color(0xFFFAFAFA),
+      destructive: D.danger,
+      destructiveForeground: D.onAccent,
       border: D.border,
       input: D.border,
       ring: D.accent,
-      selection: Color(0xFF1A3A7A),
+      selection: D.accentWash,
     );
 
 Widget ic(IconCtor f, {double size = 18, Color color = kMfg}) => f(color: color, width: size, height: size);
@@ -109,8 +109,18 @@ class HermesApp extends StatelessWidget {
         theme: ThemeData(
           brightness: Brightness.dark,
           scaffoldBackgroundColor: kBg,
-          colorScheme: const ColorScheme.dark(primary: kPrimary, surface: kBg),
+          colorScheme: const ColorScheme.dark(primary: kPrimary, surface: kBg, error: D.danger),
           splashFactory: NoSplash.splashFactory,
+          textSelectionTheme: TextSelectionThemeData(
+            cursorColor: D.accent,
+            selectionColor: D.accent.withValues(alpha: 0.32),
+            selectionHandleColor: D.accent,
+          ),
+          tooltipTheme: TooltipThemeData(
+            decoration: BoxDecoration(color: D.surfaceTop, borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: D.borderSoft)),
+            textStyle: const TextStyle(color: D.fg, fontSize: 12),
+          ),
           pageTransitionsTheme: const PageTransitionsTheme(builders: {
             TargetPlatform.android: DPageTransitions(),
           }),
@@ -279,8 +289,16 @@ class _LoginPageState extends State<LoginPage> {
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(22),
             child: Column(children: [
-              ic(tb.Brain.new, size: 42, color: D.accent),
-              const SizedBox(height: 12),
+              Container(
+                width: 72, height: 72,
+                decoration: BoxDecoration(
+                  color: D.accentWash,
+                  borderRadius: BorderRadius.circular(22),
+                  border: Border.all(color: D.accentDim.withValues(alpha: 0.5)),
+                ),
+                child: Center(child: ic(tb.Brain.new, size: 36, color: D.accent)),
+              ),
+              const SizedBox(height: 16),
               Text('Hermes', style: txt(24, weight: FontWeight.w700)),
               const SizedBox(height: 4),
               Text('المساعد الشخصي على أجهزتك', style: txt(13, color: D.muted)),
@@ -479,10 +497,15 @@ class LinkBanner extends StatelessWidget {
     final connecting = gw.state == LinkState.connecting;
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: kCard, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(8)),
+      padding: const EdgeInsetsDirectional.fromSTEB(12, 6, 6, 6),
+      constraints: const BoxConstraints(minHeight: 44),
+      decoration: BoxDecoration(
+        color: connecting ? D.surfaceHi : D.danger.withValues(alpha: 0.10),
+        border: Border.all(color: connecting ? D.borderSoft : D.danger.withValues(alpha: 0.28)),
+        borderRadius: BorderRadius.circular(D.rMd),
+      ),
       child: Row(children: [
-        ic(connecting ? tb.Loader2.new : tb.WifiOff.new, size: 16),
+        ic(connecting ? tb.Loader2.new : tb.WifiOff.new, size: 16, color: connecting ? D.muted : D.danger),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -507,56 +530,68 @@ class TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final model = store.currentModel.isEmpty ? 'النموذج' : store.currentModel;
-    final title = store.sid == null ? 'Hermes' : store.title;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: kBorder))),
+    final title = store.sid == null ? 'Hermes' : (store.title.isEmpty ? 'جلسة جديدة' : store.title);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
       child: Row(children: [
-        DIconBtn(icon: tb.Menu2.new, onPressed: onMenu),
+        _BarBtn(icon: tb.Menu2.new, tooltip: 'الجلسات', onPressed: onMenu),
+        const SizedBox(width: 4),
         Expanded(
           child: Text(
             title,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textDirection: _dirOf(title),
-            textAlign: TextAlign.right,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: kFg),
+            textAlign: TextAlign.start,
+            style: txt(15.5, weight: FontWeight.w600, height: 1.3),
           ),
         ),
-        const SizedBox(width: 6),
-        if (store.sid != null) ...[
-          DIconBtn(
+        if (store.sid != null)
+          _BarBtn(
             icon: tb.DoorExit.new,
-            size: 36,
             tooltip: 'إغلاق الجلسة على الجوال',
             onPressed: () async {
               final ok = await showDDialog<bool>(context, (c) => DDialog(
                   title: 'إغلاق الجلسة على الجوال',
-                              kind: DNoticeKind.warning,
+                  kind: DNoticeKind.warning,
                   body: 'سيتوقف الجوال عن الاحتفاظ بهذه الجلسة لتتمكن من فتحها على سطح المكتب. المحادثة محفوظة ويمكن فتحها هنا مجددًا.',
                   actions: [
                     DBtn(label: 'إلغاء', kind: DBtnKind.outline, onPressed: () => Navigator.of(c).pop(false)),
-                    DBtn(label: 'إغلاق', icon: tb.DoorExit.new, haptic: Hx.heavy, onPressed: () => Navigator.of(c).pop(true)),
+                    DBtn(label: 'إغلاق', icon: tb.DoorExit.new, kind: DBtnKind.danger, haptic: Hx.heavy, onPressed: () => Navigator.of(c).pop(true)),
                   ],
                 ),
               );
               if (ok == true) store.closeSession();
             },
           ),
-          const SizedBox(width: 6),
-        ],
-        if (store.sid != null)
-          DChip(
-            label: model,
-            icon: tb.Cpu.new,
-            trailing: tb.ChevronDown.new,
-            ltr: true,
-            onTap: () => showModelSheet(context, store),
-          ),
+        _BarBtn(icon: tb.Edit.new, tooltip: 'جلسة جديدة', onPressed: store.newSession),
       ]),
     );
   }
+}
+
+/// Flat 44px header button: no disc, so the title carries the bar.
+class _BarBtn extends StatelessWidget {
+  const _BarBtn({required this.icon, required this.tooltip, required this.onPressed});
+  final IconCtor icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  @override
+  Widget build(BuildContext context) => Tooltip(
+        message: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: () {
+              H.fire(Hx.light);
+              onPressed();
+            },
+            child: SizedBox(width: 44, height: 44, child: Center(child: ic(icon, size: 20, color: D.fg))),
+          ),
+        ),
+      );
 }
 
 String _when(double ts) {
@@ -602,63 +637,68 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
     final rows = store.sessions
         .where((s) => q.isEmpty || s.title.toLowerCase().contains(q.toLowerCase()) || s.id.contains(q))
         .toList();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day).millisecondsSinceEpoch / 1000;
-    final todayRows = rows.where((r) => r.startedAt >= today).toList();
-    final older = rows.where((r) => r.startedAt < today).toList();
 
     Future<void> confirmLogout() async {
-    final ok = await showDDialog<bool>(context, (c) => DDialog(
-        title: 'تسجيل الخروج',
-                              kind: DNoticeKind.warning,
-        body: 'سيُحذف عنوان الخادم وبيانات الدخول من هذا الجهاز.',
-        actions: [
-          DBtn(label: 'إلغاء', kind: DBtnKind.outline, onPressed: () => Navigator.of(c).pop(false)),
-          DBtn(label: 'خروج', kind: DBtnKind.outline, haptic: Hx.heavy, onPressed: () => Navigator.of(c).pop(true)),
-        ],
-      ),
-    );
-    if (ok == true) widget.onLogout();
-  }
+      final ok = await showDDialog<bool>(context, (c) => DDialog(
+          title: 'تسجيل الخروج',
+          kind: DNoticeKind.warning,
+          body: 'سيُحذف عنوان الخادم وبيانات الدخول من هذا الجهاز.',
+          actions: [
+            DBtn(label: 'إلغاء', kind: DBtnKind.outline, onPressed: () => Navigator.of(c).pop(false)),
+            DBtn(label: 'خروج', icon: tb.Logout.new, kind: DBtnKind.danger, haptic: Hx.heavy, onPressed: () => Navigator.of(c).pop(true)),
+          ],
+        ),
+      );
+      if (ok == true) widget.onLogout();
+    }
 
-  Widget tile(SessionRow r) {
+    void open(SessionRow r) {
+      H.fire(Hx.light);
+      Navigator.of(context).pop();
+      store.openSession(r);
+    }
+
+    /// Plain text row: title, then source and time. Only the open session is
+    /// shaded; a working session gets a small live dot at the end.
+    Widget tile(SessionRow r) {
       final on = r.id == store.storedId;
+      final busy = store.activeFor(r.id)?.busy == true;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 1),
         child: Material(
-          color: on ? kMuted : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          color: on ? D.surfaceHi : Colors.transparent,
+          borderRadius: BorderRadius.circular(D.rMd),
           child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () {
-              H.fire(Hx.light);
-              Navigator.of(context).pop();
-              store.openSession(r);
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: store.activeFor(r.id)?.busy == true
-                      ? const StatusDot(busy: true)
-                      : ic(tb.MessageCircle.new, size: 15),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    Text(r.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textDirection: _dirOf(r.title),
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(color: kFg, fontSize: 13.5)),
-                    const SizedBox(height: 2),
-                    Text('${_sourceLabel(r.source)}  ·  ${_when(r.startedAt)}',
-                        textDirection: TextDirection.rtl, style: const TextStyle(color: kMfg, fontSize: 11)),
-                  ]),
-                ),
-              ]),
+            borderRadius: BorderRadius.circular(D.rMd),
+            onTap: () => open(r),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 52),
+              child: Padding(
+                padding: const EdgeInsetsDirectional.fromSTEB(8, 8, 12, 8),
+                child: Row(children: [
+                  AnimatedContainer(
+                    duration: D.tIn,
+                    curve: D.ease,
+                    width: 3,
+                    height: on ? 22 : 0,
+                    decoration: BoxDecoration(color: D.accent, borderRadius: BorderRadius.circular(D.rPill)),
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                      Text(r.title.isEmpty ? 'جلسة بلا عنوان' : r.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: _dirOf(r.title),
+                          style: txt(14, weight: on ? FontWeight.w600 : FontWeight.w400, height: 1.35)),
+                      const SizedBox(height: 2),
+                      Text('${_sourceLabel(r.source)}  ·  بدأت ${_when(r.startedAt)}',
+                          textDirection: TextDirection.rtl, style: txt(11.5, color: D.faint, height: 1.3)),
+                    ]),
+                  ),
+                  if (busy) ...[const SizedBox(width: 10), const StatusDot(busy: true)],
+                ]),
+              ),
             ),
           ),
         ),
@@ -668,113 +708,150 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
     Widget activeTile(ActiveSession a) {
       final on = a.id == store.sid;
       return Material(
-        color: on ? D.accentWash : Colors.transparent,
+        color: on ? D.surfaceHi : Colors.transparent,
         borderRadius: BorderRadius.circular(D.rMd),
         child: InkWell(
           borderRadius: BorderRadius.circular(D.rMd),
-          onTap: () {
-            H.fire(Hx.light);
-            Navigator.of(context).pop();
-            store.openSession(SessionRow(a.key.isEmpty ? a.id : a.key, a.title, '', 0, 0));
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            child: Row(children: [
-              StatusDot(busy: a.busy),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(a.title.isEmpty ? 'جلسة بلا عنوان' : a.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textDirection: _dirOf(a.title),
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(color: kFg, fontSize: 13.5)),
-              ),
-              const SizedBox(width: 8),
-              Text(_statusLabel(a.status), style: TextStyle(color: a.busy ? kOk : kMfg, fontSize: 11)),
-            ]),
+          onTap: () => open(SessionRow(a.key.isEmpty ? a.id : a.key, a.title, '', 0, 0)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(children: [
+                StatusDot(busy: a.busy),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(a.title.isEmpty ? 'جلسة بلا عنوان' : a.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: _dirOf(a.title),
+                      style: txt(14, weight: on ? FontWeight.w600 : FontWeight.w400, height: 1.35)),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (a.busy ? D.ok : D.muted).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(D.rPill),
+                  ),
+                  child: Text(_statusLabel(a.status), style: txt(11, color: a.busy ? D.ok : D.muted, weight: FontWeight.w600, height: 1.2)),
+                ),
+              ]),
+            ),
           ),
         ),
       );
     }
 
-    Widget header(String t) => DSection(t);
+    Widget footerBtn(IconCtor icon, String label, VoidCallback onTap) => Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(D.rSm),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(D.rSm),
+            onTap: () {
+              H.fire(Hx.light);
+              onTap();
+            },
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(children: [
+                  ic(icon, size: 18, color: D.muted),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(label, style: txt(14, color: D.fg.withValues(alpha: 0.86)))),
+                ]),
+              ),
+            ),
+          ),
+        );
 
     return Drawer(
-      backgroundColor: kSide,
+      backgroundColor: D.surface,
       width: MediaQuery.of(context).size.width * 0.86,
       shape: const RoundedRectangleBorder(),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Row(children: [
-              const Expanded(
-                  child: Text('Hermes', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: kFg))),
-              const BioToggle(),
-              DIconBtn(
-                icon: tb.Refresh.new,
-                size: 36,
-                onPressed: () {
-                  store.refreshSessions();
-                  store.refreshActive();
-                }),
-              DIconBtn(icon: tb.Logout.new, size: 36, onPressed: () => confirmLogout()),
-            ]),
-            if (widget.onBackground != null)
-              DBtn(label: 'الاتصال في الخلفية', kind: DBtnKind.ghost,
-                  icon: tb.Bolt.new, onPressed: widget.onBackground),
-            const SizedBox(height: 10),
-            DBtn(
-              label: 'جلسة جديدة',
-              icon: tb.Plus.new,
-              onPressed: () {
-                Navigator.of(context).pop();
-                store.newSession();
-              },
-            ),
-            const SizedBox(height: 10),
-            DInput(
+            Padding(
+              padding: const EdgeInsets.fromLTRB(6, 2, 2, 10),
               child: Row(children: [
-                ic(tb.Search.new, size: 16),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: TextField(
-                    onChanged: (v) => setState(() => q = v),
-                    style: txt(13.5),
-                    cursorColor: D.accent,
-                    decoration: const InputDecoration(
-                      isDense: true,
-                      hintText: 'ابحث في الجلسات',
-                      hintStyle: TextStyle(color: D.muted, fontSize: 13.5),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                    ),
+                Expanded(child: Text('Hermes', style: txt(22, weight: FontWeight.w700, height: 1.2))),
+                Tooltip(
+                  message: 'تحديث',
+                  child: DIconBtn(
+                    icon: tb.Refresh.new,
+                    size: 40,
+                    onPressed: () {
+                      store.refreshSessions();
+                      store.refreshActive();
+                    },
                   ),
                 ),
               ]),
             ),
-            if (store.active.isNotEmpty) ...[
-              DSection('الجلسات النشطة', trailing: Text('${store.active.length}', style: txt(11, color: D.muted))),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 220),
-                child: ListView(shrinkWrap: true, children: store.active.map(activeTile).toList()),
+            Row(children: [
+              Expanded(
+                child: DInput(
+                  pad: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                  child: Row(children: [
+                    ic(tb.Search.new, size: 16),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextField(
+                        onChanged: (v) => setState(() => q = v),
+                        style: txt(14),
+                        cursorColor: D.accent,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          hintText: 'ابحث في الجلسات',
+                          hintStyle: TextStyle(color: D.faint, fontSize: 14),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
               ),
-              Container(height: 1, margin: const EdgeInsets.symmetric(vertical: 8), color: D.borderSoft),
-            ],
-            const SizedBox(height: 4),
+              const SizedBox(width: 8),
+              DIconBtn(
+                icon: tb.Edit.new,
+                size: 44,
+                primary: true,
+                tooltip: 'جلسة جديدة',
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  store.newSession();
+                },
+              ),
+            ]),
             Expanded(
               child: store.loadingSessions && store.sessions.isEmpty
                   ? const Center(child: CircularProgressIndicator(color: kPrimary))
-                  : rows.isEmpty
-                      ? const Center(child: Text('لا توجد جلسات', style: TextStyle(color: kMfg)))
-                      : ListView(children: [
-                          if (todayRows.isNotEmpty) header('اليوم'),
-                          ...todayRows.map(tile),
-                          if (older.isNotEmpty) header('السابقة'),
-                          ...older.map(tile),
-                        ]),
+                  : ListView(padding: const EdgeInsets.only(top: 4), children: [
+                      if (store.active.isNotEmpty) ...[
+                        DSection('الجلسات النشطة', trailing: Text('${store.active.length}', style: txt(11.5, color: D.muted))),
+                        ...store.active.map(activeTile),
+                      ],
+                      if (rows.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 48),
+                          child: Center(child: Text(q.isEmpty ? 'لا توجد جلسات' : 'لا نتائج', style: txt(13.5, color: D.muted))),
+                        ),
+                      // The server orders by last activity; the row shows when the
+                      // session began, so the list is labelled by activity, not by date.
+                      if (rows.isNotEmpty) DSection('الأحدث نشاطًا'),
+                      ...rows.map(tile),
+                    ]),
             ),
+            Container(height: 1, margin: const EdgeInsets.symmetric(vertical: 6), color: D.borderSoft),
+            if (widget.onBackground != null) footerBtn(tb.Bolt.new, 'الاتصال في الخلفية', widget.onBackground!),
+            Row(children: [
+              Expanded(child: footerBtn(tb.Logout.new, 'تسجيل الخروج', confirmLogout)),
+              const BioToggle(),
+            ]),
           ]),
         ),
       ),
@@ -786,6 +863,12 @@ class ChatView extends StatelessWidget {
   const ChatView({super.key, required this.store});
   final HermesStore store;
 
+  static const _starters = <(IconCtor, String)>[
+    (tb.ListCheck.new, 'لخّص ما أنجزته في آخر جلسة'),
+    (tb.Terminal2.new, 'افحص حالة الخادم وأبلغني بأي مشكلة'),
+    (tb.FileText.new, 'اقرأ الملف المرفق واستخرج أهم النقاط'),
+  ];
+
   @override
   Widget build(BuildContext context) {
     if (store.opening) return const Center(child: CircularProgressIndicator(color: kPrimary));
@@ -794,11 +877,38 @@ class ChatView extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            ic(tb.Messages.new, size: 40),
-            const SizedBox(height: 12),
-            const Text('اختر جلسة من القائمة أو ابدأ جلسة جديدة',
-                textAlign: TextAlign.center, style: TextStyle(color: kMfg)),
+            ic(tb.Messages.new, size: 36),
+            const SizedBox(height: 14),
+            Text('اختر جلسة من القائمة أو ابدأ جلسة جديدة',
+                textAlign: TextAlign.center, style: txt(14, color: D.muted)),
+            const SizedBox(height: 18),
+            DBtn(label: 'جلسة جديدة', icon: tb.Edit.new, onPressed: store.newSession),
           ]),
+        ),
+      );
+    }
+    if (store.items.isEmpty && !store.running) {
+      return LayoutBuilder(
+        builder: (context, box) => SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: box.maxHeight - 36, minWidth: box.maxWidth - 40),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('بماذا نبدأ؟', style: txt(28, weight: FontWeight.w700, height: 1.25)),
+                const SizedBox(height: 6),
+                Text('يعمل Hermes على خادمك بأدواته وملفاته.', style: txt(14, color: D.muted)),
+                const SizedBox(height: 22),
+                for (final (icon, label) in _starters)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: DSuggestion(icon: icon, label: label, onTap: () => store.requestDraft(label)),
+                  ),
+              ],
+            ),
+          ),
         ),
       );
     }
@@ -806,14 +916,19 @@ class ChatView extends StatelessWidget {
     final extra = store.running ? 1 : 0;
     return ListView.builder(
       reverse: true,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       itemCount: items.length + extra,
       itemBuilder: (context, i) {
         if (extra == 1 && i == 0) return RunningLine(store: store);
         final it = items[i - extra];
+        // Steps sit tight together; conversation turns get room to breathe.
+        final older = i - extra + 1 < items.length ? items[i - extra + 1] : null;
+        final step = it.kind == 'tool' || it.kind == 'thinking';
+        final prevStep = older != null && (older.kind == 'tool' || older.kind == 'thinking');
+        final gap = older == null ? 0.0 : (step && prevStep ? 0.0 : (it.kind == 'user' ? 18.0 : 10.0));
         return EnterAnim(
           key: ObjectKey(it),
-          child: Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: MessageTile(item: it)),
+          child: Padding(padding: EdgeInsets.only(top: gap), child: MessageTile(item: it)),
         );
       },
     );
@@ -873,11 +988,11 @@ class _MessageTileState extends State<MessageTile> {
                 GestureDetector(
                   onLongPress: () => _copy(it.text),
                   child: DCard(
-                    color: D.accentWash,
+                    color: D.bubble,
                     radius: D.rLg,
-                    border: D.accentDim.withValues(alpha: 0.35),
-                    pad: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
-                    child: Text(it.text, textDirection: _dirOf(it.text), style: txt(14.5)),
+                    shadow: const [],
+                    pad: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                    child: Text(it.text, textDirection: _dirOf(it.text), style: txt(15, height: 1.55)),
                   ),
                 ),
             ]),
@@ -890,109 +1005,148 @@ class _MessageTileState extends State<MessageTile> {
           if (body.isNotEmpty)
             GestureDetector(
               onLongPress: () => _copy(body),
-              child: GptMarkdown(body, textDirection: _dirOf(body), style: txt(14.5, height: 1.65)),
+              child: GptMarkdownTheme(
+                gptThemeData: _mdTheme,
+                child: GptMarkdown(
+                  body,
+                  textDirection: _dirOf(body),
+                  style: txt(15, height: 1.7),
+                  codeBuilder: (context, name, code, closed) => DCodeBlock(
+                    language: name,
+                    code: code,
+                    onCopy: () => _copy(code),
+                  ),
+                ),
+              ),
             ),
           for (final path in media)
             Padding(padding: const EdgeInsets.only(top: 8), child: MediaCard(path: path)),
+          if (body.isNotEmpty && it.done)
+            DActionRow(textDirection: _dirOf(body), actions: [
+              (tb.Copy.new, 'نسخ', () => _copy(body)),
+            ]),
         ]);
       case 'thinking':
         final live = !it.done;
-        return GestureDetector(
-          onTap: () {
-            H.fire(Hx.select);
-            setState(() => open = !open);
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-                border: Border(right: BorderSide(color: live ? kPrimary : kBorder, width: 2))),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Row(children: [
-                ic(tb.Brain.new, size: 15, color: live ? kFg : kMfg),
-                const SizedBox(width: 6),
-                DTextSwap(live ? 'يفكر...' : 'التفكير',
-                    style: TextStyle(color: live ? kFg : kMfg, fontSize: 12.5, fontWeight: FontWeight.w500)),
-                const Spacer(),
-                AnimatedRotation(
-                  turns: open ? 0.5 : 0,
-                  duration: open ? D.tIn : D.tOut,
-                  curve: open ? D.ease : D.easeIn,
-                  child: ic(tb.ChevronDown.new, size: 14),
-                ),
-              ]),
-              DCollapse(
-                open: open || live,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    live && !open && it.text.length > 280 ? '...${it.text.substring(it.text.length - 280)}' : it.text,
-                    textDirection: _dirOf(it.text),
-                    style: const TextStyle(color: kMfg, fontSize: 12.5, height: 1.5, fontStyle: FontStyle.italic),
-                  ),
-                ),
-              ),
-            ]),
+        final label = live
+            ? 'يفكر...'
+            : it.seconds != null && it.seconds! > 0
+                ? 'فكّر لمدة ${_arDuration(it.seconds!)}'
+                : 'التفكير';
+        return DStepRow(
+          icon: tb.Brain.new,
+          tone: live ? D.accent : D.muted,
+          label: label,
+          labelDirection: TextDirection.rtl,
+          detail: !open && live ? _tail(it.text, 80) : '',
+          trailing: live ? DElapsed(from: it.started) : null,
+          open: open,
+          onTap: it.text.trim().isEmpty ? null : () => setState(() => open = !open),
+          body: Text(
+            it.text.trim(),
+            textDirection: _dirOf(it.text),
+            style: txt(13, color: D.muted, height: 1.6),
           ),
         );
       case 'tool':
-        return GestureDetector(
-          onTap: it.detail.isEmpty
-              ? null
-              : () {
-                  H.fire(Hx.select);
-                  setState(() => open = !open);
-                },
-          child: DCard(
-            color: D.surfaceHi,
-            radius: D.rMd,
-            border: D.borderSoft,
-            pad: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Row(children: [
-                ic(tb.Tool.new, size: 14),
-                const SizedBox(width: 7),
-                Text(it.text, style: txt(12, weight: FontWeight.w600)),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(it.detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: txt(12, color: D.muted)),
-                ),
-                if (it.duration != null) Text('${it.duration!.toStringAsFixed(1)}s', style: txt(11, color: D.muted)),
-                if (it.duration != null) const SizedBox(width: 6),
-                DSwap(
-                  id: it.done,
-                  turn: false,
-                  child: it.done
-                      ? ic(tb.Check.new, size: 14, color: D.ok)
-                      : const SizedBox(
-                          width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6, color: D.muted)),
-                ),
-              ]),
-              DCollapse(
-                open: open,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 7),
-                  child: Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: SelectableText(it.detail,
-                        style: txt(11.5, color: D.muted, height: 1.5).copyWith(fontFamily: 'monospace')),
-                  ),
-                ),
-              ),
-            ]),
+        return DStepRow(
+          icon: _toolIcon(it.text),
+          tone: it.done ? D.muted : D.accent,
+          label: it.text,
+          labelDirection: TextDirection.ltr,
+          detail: it.detail,
+          open: open,
+          onTap: it.detail.isEmpty ? null : () => setState(() => open = !open),
+          trailing: DSwap(
+            id: it.done,
+            turn: false,
+            child: it.done
+                ? Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (it.duration != null)
+                      Padding(
+                        padding: const EdgeInsetsDirectional.only(end: 6),
+                        child: Text(dSeconds(it.duration!), textDirection: TextDirection.ltr, style: txt(11, color: D.muted)),
+                      ),
+                    ic(tb.Check.new, size: 14, color: D.ok),
+                  ])
+                : Row(mainAxisSize: MainAxisSize.min, children: [
+                    DElapsed(from: it.started),
+                    const SizedBox(width: 6),
+                    const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6, color: D.accent)),
+                  ]),
+          ),
+          body: Directionality(
+            textDirection: TextDirection.ltr,
+            child: SelectableText(it.detail,
+                style: txt(11.5, color: D.muted, height: 1.5).copyWith(fontFamily: 'monospace')),
           ),
         );
       default:
         return Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(10),
-          decoration:
-              BoxDecoration(color: kSide, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(8)),
-          child: SelectableText(it.text,
-              textDirection: _dirOf(it.text),
-              style: const TextStyle(color: kMfg, fontSize: 12, fontFamily: 'monospace', height: 1.4)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: D.danger.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(D.rMd),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Padding(padding: const EdgeInsets.only(top: 2), child: ic(tb.AlertCircle.new, size: 15, color: D.danger)),
+            const SizedBox(width: 9),
+            Expanded(
+              child: SelectableText(it.text,
+                  textDirection: _dirOf(it.text), style: txt(12.5, color: D.fg, height: 1.5)),
+            ),
+          ]),
         );
     }
   }
+}
+
+/// "12 ثانية" / "1 د 04 ث": Arabic units, Latin digits (as elsewhere in the app).
+/// Answer typography: accent links, quiet inline code chips, heading weights
+/// that step down instead of shouting, hairline rules.
+final _mdTheme = GptMarkdownThemeData(
+  brightness: Brightness.dark,
+  highlightColor: D.surfaceHi,
+  linkColor: D.accent,
+  linkHoverColor: D.accent,
+  hrLineColor: D.borderSoft,
+  hrLineThickness: 1,
+  h1: txt(21, weight: FontWeight.w700, height: 1.45),
+  h2: txt(18.5, weight: FontWeight.w700, height: 1.45),
+  h3: txt(16.5, weight: FontWeight.w600, height: 1.5),
+  h4: txt(15.5, weight: FontWeight.w600, height: 1.5),
+  inlineCode: InlineCodeStyle(
+    color: D.fg,
+    backgroundColor: D.surfaceHi,
+    borderColor: D.borderSoft,
+    borderWidth: 1,
+    borderRadius: Radius.circular(6),
+    fontSizeFactor: 0.88,
+  ),
+);
+
+String _arDuration(int s) {
+  if (s < 60) return '$s ثانية';
+  return '${s ~/ 60} د ${(s % 60).toString().padLeft(2, '0')} ث';
+}
+
+String _tail(String s, int n) {
+  final t = s.trim().replaceAll(RegExp(r'\s+'), ' ');
+  return t.length <= n ? t : '...${t.substring(t.length - n)}';
+}
+
+/// Icon per tool family so a column of steps can be scanned without reading.
+IconCtor _toolIcon(String name) {
+  final n = name.toLowerCase();
+  if (n.contains('terminal') || n.contains('shell') || n.contains('bash') || n.contains('process')) return tb.Terminal2.new;
+  if (n.contains('search') || n.contains('grep') || n.contains('find')) return tb.Search.new;
+  if (n.contains('read') || n.contains('file') || n.contains('write') || n.contains('patch')) return tb.FileText.new;
+  if (n.contains('web') || n.contains('browser') || n.contains('fetch') || n.contains('extract')) return tb.World.new;
+  if (n.contains('delegate') || n.contains('agent')) return tb.BinaryTree.new;
+  if (n.contains('image') || n.contains('vision')) return tb.Photo.new;
+  if (n.contains('memory') || n.contains('skill')) return tb.Bookmark.new;
+  return tb.Tool.new;
 }
 
 class RequestCard extends StatefulWidget {
@@ -1026,7 +1180,12 @@ class _RequestCardState extends State<RequestCard> {
       margin: const EdgeInsets.fromLTRB(10, 0, 10, 6),
       padding: const EdgeInsets.all(12),
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
-      decoration: BoxDecoration(color: kCard, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: D.surface,
+        border: Border.all(color: D.accentDim.withValues(alpha: 0.55)),
+        borderRadius: BorderRadius.circular(D.rLg),
+        boxShadow: D.soft,
+      ),
       child: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
           Row(children: [
@@ -1137,10 +1296,21 @@ class _ComposerState extends State<Composer> {
   void initState() {
     super.initState();
     ctl.addListener(() => setState(() {}));
+    widget.store.addListener(_takeDraft);
+  }
+
+  /// A suggestion chip filled the composer: place it, focus nothing, send nothing.
+  void _takeDraft() {
+    final d = widget.store.draftRequest;
+    if (d == null || !mounted) return;
+    widget.store.takeDraft();
+    ctl.text = d;
+    ctl.selection = TextSelection.collapsed(offset: d.length);
   }
 
   @override
   void dispose() {
+    widget.store.removeListener(_takeDraft);
     ticker?.cancel();
     rec.dispose();
     ctl.dispose();
@@ -1310,7 +1480,7 @@ class _ComposerState extends State<Composer> {
                 final isSkill = c.group == 'المهارات';
                 final warn = c.name == '/yolo';
                 return InkWell(
-                  borderRadius: BorderRadius.circular(D.rSm),
+                  borderRadius: BorderRadius.circular(D.rMd),
                   onTap: () {
                     H.fire(Hx.select);
                     ctl.text = '${c.name} ';
@@ -1318,10 +1488,11 @@ class _ComposerState extends State<Composer> {
                   },
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                    constraints: const BoxConstraints(minHeight: 44),
                     decoration: BoxDecoration(
                       color: warn ? D.danger.withValues(alpha: 0.10) : Colors.transparent,
-                      borderRadius: BorderRadius.circular(D.rSm),
+                      borderRadius: BorderRadius.circular(D.rMd),
                     ),
                     child: Row(children: [
                       Text(c.name,
@@ -1334,11 +1505,11 @@ class _ComposerState extends State<Composer> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textDirection: _dirOf(c.description),
-                          style: txt(12, color: D.muted),
+                          style: txt(12, color: D.faint),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      ic(isSkill ? tb.Sparkles.new : tb.Slash.new, size: 15),
+                      ic(isSkill ? tb.Sparkles.new : tb.Slash.new, size: 15, color: isSkill ? D.accent : D.muted),
                     ]),
                   ),
                 );
@@ -1348,11 +1519,11 @@ class _ComposerState extends State<Composer> {
         ),
       ),
       DCard(
-        margin: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-        pad: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-        radius: D.rLg,
-        shadow: D.lift,
-        border: D.borderSoft,
+        margin: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+        pad: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        radius: 26,
+        shadow: D.soft,
+        border: D.hairline,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           DReveal(
             show: store.attachments.isNotEmpty,
@@ -1360,7 +1531,7 @@ class _ComposerState extends State<Composer> {
             child: Padding(
               padding: const EdgeInsets.only(top: 2, bottom: 6),
               child: SizedBox(
-                height: 38,
+                height: store.attachments.any((a) => a.isImage && a.bytes.isNotEmpty) ? 56 : 40,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: store.attachments.length,
@@ -1383,7 +1554,9 @@ class _ComposerState extends State<Composer> {
               ]),
             )
           else
-            TextField(
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: TextField(
               controller: ctl,
               minLines: 1,
               maxLines: 6,
@@ -1401,6 +1574,7 @@ class _ComposerState extends State<Composer> {
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 8),
               ),
+            ),
             ),
           DReveal(
             show: store.running && canAct && !recording,
@@ -1430,42 +1604,40 @@ class _ComposerState extends State<Composer> {
             ),
           ),
 
-          if (!recording)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: DChip(
-                  label: 'Thinking: ${_effortLabel(effort)}',
-                  icon: tb.Brain.new,
-                  active: effort.isNotEmpty,
-                  ltr: true,
-                  onTap: () => showModelSheet(context, store),
-                ),
-              ),
-            ),
           Row(children: [
-            if (recording)
+            if (recording) ...[
               DBtn(
                 label: 'إلغاء',
                 icon: tb.X.new,
                 kind: DBtnKind.ghost,
                 dense: true,
                 onPressed: () => stopRec(cancel: true),
-              )
-            else ...[
-              DIconBtn(icon: tb.Paperclip.new, size: 36, onPressed: pickFiles),
-              const SizedBox(width: 6),
+              ),
+              const Spacer(),
+            ] else ...[
+              DIconBtn(icon: tb.Paperclip.new, size: 40, tooltip: 'إرفاق ملف', onPressed: pickFiles),
               DIconBtn(
                 icon: tb.Slash.new,
-                size: 36,
+                size: 40,
+                tooltip: 'الأوامر',
                 onPressed: () {
                   ctl.text = '/';
                   ctl.selection = const TextSelection.collapsed(offset: 1);
                 },
               ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: DModelChip(
+                    model: store.currentModel,
+                    effort: _effortLabel(effort),
+                    onTap: () => showModelSheet(context, store),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
             ],
-            const Spacer(),
             if (transcribing)
               const Padding(
                 padding: EdgeInsets.all(8),
@@ -1475,15 +1647,19 @@ class _ComposerState extends State<Composer> {
               DIconBtn(
                 icon: recording ? tb.PlayerStop.new : tb.Microphone.new,
                 active: recording,
+                size: 40,
+                tooltip: recording ? 'إنهاء التسجيل' : 'إملاء صوتي',
                 haptic: recording ? Hx.medium : Hx.heavy,
                 onPressed: recording ? () => stopRec() : startRec,
               ),
             if (!recording) ...[
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               DIconBtn(
                 icon: store.running ? tb.PlayerStop.new : tb.ArrowUp.new,
                 primary: true,
                 active: store.running,
+                size: 40,
+                tooltip: store.running ? 'إيقاف' : 'إرسال',
                 haptic: store.running ? Hx.heavy : Hx.medium,
                 onPressed: store.running ? store.interrupt : (canAct ? send : null),
               ),
@@ -1553,10 +1729,10 @@ class _ModelSheetState extends State<ModelSheet> {
   bool busy = false;
 
   Widget _switchRow(IconCtor icon, String label, bool value, ValueChanged<bool> onChanged) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsetsDirectional.fromSTEB(14, 4, 8, 4),
         child: Row(children: [
-          ic(icon, size: 16),
-          const SizedBox(width: 10),
+          ic(icon, size: 17, color: value ? D.accent : D.muted),
+          const SizedBox(width: 12),
           Expanded(child: Text(label, style: txt(14))),
           Switch(
             value: value,
@@ -1564,7 +1740,7 @@ class _ModelSheetState extends State<ModelSheet> {
             activeThumbColor: Colors.white,
             activeTrackColor: D.accent,
             inactiveThumbColor: D.muted,
-            inactiveTrackColor: D.surfaceHi,
+            inactiveTrackColor: D.surfaceTop,
             trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
           ),
         ]),
@@ -1573,12 +1749,14 @@ class _ModelSheetState extends State<ModelSheet> {
   Widget _effortRow(String effort) {
     const options = ['low', 'medium', 'high', 'xhigh', 'max'];
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Row(children: [
-          ic(tb.Brain.new, size: 16),
-          const SizedBox(width: 10),
-          Text('مستوى التفكير', style: txt(14)),
+          ic(tb.Brain.new, size: 17, color: D.accent),
+          const SizedBox(width: 12),
+          Text('Thinking', textDirection: TextDirection.ltr, style: txt(14, weight: FontWeight.w500)),
+          const Spacer(),
+          Text(_effortLabel(effort), textDirection: TextDirection.ltr, style: txt(12, color: D.faint)),
         ]),
         const SizedBox(height: 10),
         DSegmented(
@@ -1603,6 +1781,13 @@ class _ModelSheetState extends State<ModelSheet> {
         final list = s.models
             .where((m) => terms.every((t) => '${m.model} ${m.provider} ${m.providerName}'.toLowerCase().contains(t)))
             .toList();
+        // The current provider's group comes first so the selected model is in view.
+        if (q.isEmpty) {
+          final mine = list.where((m) => m.provider == s.currentProvider).toList();
+          list
+            ..removeWhere((m) => m.provider == s.currentProvider)
+            ..insertAll(0, mine);
+        }
         final fast = s.info['fast'] == true;
         final yolo = s.info['yolo'] == true;
         final effort = '${s.info['reasoning_effort'] ?? ''}';
@@ -1612,9 +1797,10 @@ class _ModelSheetState extends State<ModelSheet> {
           if (m.provider != lastProv) {
             lastProv = m.provider;
             rows.add(Padding(
-              padding: const EdgeInsets.fromLTRB(8, 14, 8, 6),
-              child: Text(m.providerName,
-                  textDirection: TextDirection.ltr, style: txt(11.5, color: D.muted, weight: FontWeight.w700)),
+              padding: const EdgeInsets.fromLTRB(12, 18, 12, 6),
+              child: Text(m.providerName.toUpperCase(),
+                  textDirection: TextDirection.ltr,
+                  style: txt(11, color: D.faint, weight: FontWeight.w700).copyWith(letterSpacing: 0.6)),
             ));
           }
           final cur = m.model == s.currentModel && m.provider == s.currentProvider;
@@ -1622,9 +1808,12 @@ class _ModelSheetState extends State<ModelSheet> {
             padding: const EdgeInsets.symmetric(vertical: 1),
             child: Material(
               color: cur ? D.accentWash : Colors.transparent,
-              borderRadius: BorderRadius.circular(D.rSm),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(D.rMd),
+                side: BorderSide(color: cur ? D.accentDim.withValues(alpha: 0.5) : Colors.transparent),
+              ),
               child: InkWell(
-                borderRadius: BorderRadius.circular(D.rSm),
+                borderRadius: BorderRadius.circular(D.rMd),
                 onTap: busy
                     ? null
                     : () async {
@@ -1652,20 +1841,36 @@ class _ModelSheetState extends State<ModelSheet> {
                         setState(() => busy = false);
                         if (ok) Navigator.of(context).pop();
                       },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-                  child: Directionality(
-                    textDirection: TextDirection.ltr,
-                    child: Row(children: [
-                      ic(tb.Cpu.new, size: 15, color: cur ? D.accent : D.muted),
-                      const SizedBox(width: 10),
-                      Expanded(
-                          child: Text(m.model,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: txt(13.5, weight: cur ? FontWeight.w600 : FontWeight.w400))),
-                      if (cur) ic(tb.Check.new, size: 15, color: D.accent),
-                    ]),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 52),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Directionality(
+                      textDirection: TextDirection.ltr,
+                      child: Row(children: [
+                        Expanded(
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                            Text(dModelShort(m.model),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: txt(14, weight: cur ? FontWeight.w600 : FontWeight.w500, height: 1.3)),
+                            if (dModelShort(m.model) != m.model)
+                              Text(m.model,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: txt(11, color: D.muted, height: 1.35)),
+                          ]),
+                        ),
+                        if (cur) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            width: 22, height: 22,
+                            decoration: const BoxDecoration(color: D.accent, shape: BoxShape.circle),
+                            child: Center(child: ic(tb.Check.new, size: 13, color: D.onAccent)),
+                          ),
+                        ],
+                      ]),
+                    ),
                   ),
                 ),
               ),
@@ -1687,7 +1892,7 @@ class _ModelSheetState extends State<ModelSheet> {
                   width: 40,
                   height: 4,
                   margin: const EdgeInsets.only(top: 10, bottom: 14),
-                  decoration: BoxDecoration(color: D.border, borderRadius: BorderRadius.circular(D.rPill)),
+                  decoration: BoxDecoration(color: D.surfaceTop, borderRadius: BorderRadius.circular(D.rPill)),
                 ),
               ),
               Padding(
@@ -1695,7 +1900,7 @@ class _ModelSheetState extends State<ModelSheet> {
                 child: Row(children: [
                   ic(tb.Cpu.new, size: 18, color: D.accent),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('النموذج والإعدادات', style: txt(16, weight: FontWeight.w700))),
+                  Expanded(child: Text('النموذج والإعدادات', style: txt(17, weight: FontWeight.w700))),
                   AnimatedOpacity(
                     opacity: busy ? 1 : 0,
                     duration: D.tIn,
@@ -1704,9 +1909,30 @@ class _ModelSheetState extends State<ModelSheet> {
                   ),
                 ]),
               ),
-              const SizedBox(height: 12),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: D.surfaceHi,
+                    borderRadius: BorderRadius.circular(D.rLg),
+                    border: Border.all(color: D.borderSoft),
+                  ),
+                  child: Column(children: [
+                    _effortRow(effort),
+                    Container(height: 1, margin: const EdgeInsetsDirectional.only(start: 43), color: D.borderSoft),
+                    _switchRow(tb.Bolt.new, 'الوضع السريع', fast, (v) => s.setConfig('fast', v ? 'fast' : 'normal')),
+                    Container(height: 1, margin: const EdgeInsetsDirectional.only(start: 43), color: D.borderSoft),
+                    _switchRow(tb.ShieldOff.new, 'الموافقة التلقائية لهذه الجلسة', yolo,
+                        (v) => s.setConfig('yolo', v ? 'on' : 'off')),
+                  ]),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                child: Text('النماذج', style: txt(12, color: D.faint, weight: FontWeight.w600, height: 1.3)),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: DInput(
                   child: Row(children: [
                     ic(tb.Search.new, size: 16),
@@ -1719,13 +1945,13 @@ class _ModelSheetState extends State<ModelSheet> {
                         decoration: InputDecoration(
                           isDense: true,
                           hintText: 'ابحث عن نموذج أو مزوّد',
-                          hintStyle: txt(14, color: D.muted),
+                          hintStyle: txt(14, color: D.faint),
                           border: InputBorder.none,
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
                     ),
-                    Text('${list.length}', style: txt(11, color: D.muted)),
+                    Text('${list.length}', style: txt(11, color: D.faint)),
                   ]),
                 ),
               ),
@@ -1745,16 +1971,7 @@ class _ModelSheetState extends State<ModelSheet> {
                             ),
                 ),
               ),
-              Container(height: 1, color: D.borderSoft),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 10, 18, 16),
-                child: Column(children: [
-                  _effortRow(effort),
-                  _switchRow(tb.Bolt.new, 'الوضع السريع', fast, (v) => s.setConfig('fast', v ? 'fast' : 'normal')),
-                  _switchRow(tb.ShieldOff.new, 'الموافقة التلقائية لهذه الجلسة', yolo,
-                      (v) => s.setConfig('yolo', v ? 'on' : 'off')),
-                ]),
-              ),
+              const SizedBox(height: 8),
             ]),
           ),
         );
@@ -1833,8 +2050,11 @@ class _BioToggleState extends State<BioToggle> {
   @override
   Widget build(BuildContext context) {
     if (!avail) return const SizedBox.shrink();
-    return ShadIconButton.ghost(
-      icon: ic(tb.Fingerprint.new, color: on ? kOk : kMfg),
+    return DIconBtn(
+      icon: tb.Fingerprint.new,
+      size: 40,
+      tint: on ? kOk : kMfg,
+      tooltip: on ? 'القفل بالبصمة مفعّل' : 'القفل بالبصمة متوقف',
       onPressed: () async {
         if (!await biometricCheck()) return;
         await HermesApi.setBiometric(!on);
@@ -1863,11 +2083,52 @@ class AttachChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final thumb = a.isImage && a.bytes.isNotEmpty && a.error == null;
+    if (thumb) {
+      return Tooltip(
+        message: a.name,
+        child: Stack(clipBehavior: Clip.none, children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(D.rSm),
+            child: SizedBox(
+              width: 56,
+              height: 56,
+              child: Stack(fit: StackFit.expand, children: [
+                Image.memory(Uint8List.fromList(a.bytes), fit: BoxFit.cover, gaplessPlayback: true,
+                    errorBuilder: (_, _, _) => Container(color: D.surfaceHi, child: Center(child: ic(tb.Photo.new, size: 18)))),
+                if (a.uploading)
+                  Container(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    child: const Center(
+                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: D.fg))),
+                  ),
+              ]),
+            ),
+          ),
+          PositionedDirectional(
+            top: -6,
+            end: -6,
+            child: Material(
+              color: D.surfaceHi,
+              shape: const CircleBorder(side: BorderSide(color: D.bg, width: 2)),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () {
+                  H.fire(Hx.light);
+                  onRemove(a);
+                },
+                child: SizedBox(width: 24, height: 24, child: Center(child: ic(tb.X.new, size: 12, color: D.fg))),
+              ),
+            ),
+          ),
+        ]),
+      );
+    }
     return Container(
       padding: const EdgeInsetsDirectional.fromSTEB(12, 4, 4, 4),
       decoration: BoxDecoration(
         color: D.surfaceHi,
-        borderRadius: BorderRadius.circular(D.rPill),
+        borderRadius: BorderRadius.circular(D.rSm),
         border: Border.all(color: a.error == null ? D.borderSoft : D.danger),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
