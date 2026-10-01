@@ -14,6 +14,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tb;
 
 import 'api.dart';
+import 'connections.dart';
 import 'design.dart';
 import 'notify.dart';
 import 'background_connection.dart';
@@ -150,6 +151,7 @@ class _BootState extends State<Boot> {
   HermesApi? api;
   bool ready = false;
   bool locked = false;
+  int _epoch = 0; // bumps on every gateway switch so HomePage rebuilds its store
 
   @override
   void initState() {
@@ -186,6 +188,27 @@ class _BootState extends State<Boot> {
     if (yes == true && await biometricCheck()) await HermesApi.setBiometric(true);
   }
 
+  Future<void> _openConnections() async {
+    final a = api;
+    if (a == null) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ConnectionsPage(
+        api: a,
+        onSwitched: (n) {
+          Navigator.of(context).pop();
+          setState(() {
+            api = n;
+            _epoch++;
+          });
+        },
+        onLoggedOut: () {
+          Navigator.of(context).pop();
+          setState(() => api = null);
+        },
+      ),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!ready) return const Scaffold(body: Center(child: CircularProgressIndicator(color: kPrimary)));
@@ -208,9 +231,11 @@ class _BootState extends State<Boot> {
       );
     }
     return HomePage(
+      key: ValueKey('$_epoch|${api!.connId}|${api!.baseUrl}|${api!.user}'),
       api: api!,
+      onConnections: _openConnections,
       onLogout: () async {
-        await HermesApi.clear();
+        await api!.logout();
         setState(() => api = null);
       },
     );
@@ -230,6 +255,89 @@ class _LoginPageState extends State<LoginPage> {
   final pass = TextEditingController();
   bool busy = false;
   String? error;
+  List<Conn> saved = [];
+  String? usingId;
+
+  @override
+  void initState() {
+    super.initState();
+    () async {
+      try {
+        final s = await Connections.instance.list();
+        final act = await Connections.instance.active();
+        if (!mounted) return;
+        setState(() {
+          saved = s;
+          if (act != null) {
+            url.text = act.url;
+            user.text = act.user;
+            pass.text = act.pass;
+          }
+        });
+      } catch (_) {}
+    }();
+  }
+
+  Future<void> _use(Conn c) async {
+    setState(() {
+      url.text = c.url;
+      user.text = c.user;
+      pass.text = c.pass;
+      usingId = c.id;
+    });
+    await submit(of: c.id);
+  }
+
+  Future<void> _addRemote() async {
+    final r = await Navigator.of(context).push<Object>(MaterialPageRoute(
+      builder: (_) => const ConnectionEditorPage(),
+    ));
+    if (!mounted) return;
+    if (r is HermesApi) widget.onDone(r);
+  }
+
+  Widget _savedRow(Conn c) => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: busy ? null : () => _use(c),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 54),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(children: [
+                ic(tb.World.new, size: 17, color: D.muted),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          c.name.isEmpty ? Connections.defaultName(c.url) : c.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: txt(14, weight: FontWeight.w600, height: 1.3),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          c.url,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.ltr,
+                          style: txt(11.5, color: D.faint, height: 1.3),
+                        ),
+                      ]),
+                ),
+                if (busy && usingId == c.id)
+                  const SizedBox(
+                      width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimary))
+                else
+                  ic(tb.ArrowLeft.new, size: 16, color: D.faint),
+              ]),
+            ),
+          ),
+        ),
+      );
 
   Widget _field(String label, TextEditingController c, IconCtor icon,
           {bool obscure = false, ValueChanged<String>? onSubmitted}) =>
@@ -261,15 +369,13 @@ class _LoginPageState extends State<LoginPage> {
         ),
       ]);
 
-  Future<void> submit() async {
+  Future<void> submit({String? of}) async {
     setState(() {
       busy = true;
       error = null;
     });
-    var base = url.text.trim().replaceAll(RegExp(r'/+$'), '');
-    if (!base.startsWith(RegExp('https?://'))) base = 'http://$base';
-    if (!RegExp(r':\d+$').hasMatch(Uri.parse(base).authority)) base = '$base:9131';
-    final a = HermesApi(base, user.text.trim(), pass.text);
+    final base = Connections.normalizeUrl(url.text);
+    final a = HermesApi(base, user.text.trim(), pass.text)..connId = of ?? usingId;
     try {
       await a.login();
       await a.ticket(); // prove the WS leg, not just HTTP
@@ -278,7 +384,12 @@ class _LoginPageState extends State<LoginPage> {
     } catch (e) {
       setState(() => error = e.toString());
     }
-    if (mounted) setState(() => busy = false);
+    if (mounted) {
+      setState(() {
+        busy = false;
+        usingId = null;
+      });
+    }
   }
 
   @override
@@ -336,6 +447,32 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ]),
               ),
+              if (saved.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                DCard(
+                  pad: const EdgeInsets.symmetric(vertical: 3),
+                  child: Column(children: [
+                    for (var i = 0; i < saved.length; i++) ...[
+                      if (i > 0)
+                        Container(
+                            height: 1,
+                            margin: const EdgeInsets.symmetric(horizontal: 12),
+                            color: D.borderSoft),
+                      _savedRow(saved[i]),
+                    ],
+                  ]),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                DBtn(
+                  label: 'إضافة بوابة',
+                  kind: DBtnKind.ghost,
+                  dense: true,
+                  icon: tb.Plus.new,
+                  onPressed: busy ? null : _addRemote,
+                ),
+              ]),
             ]),
           ),
         ),
@@ -345,9 +482,10 @@ class _LoginPageState extends State<LoginPage> {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.api, required this.onLogout});
+  const HomePage({super.key, required this.api, required this.onLogout, this.onConnections});
   final HermesApi api;
   final VoidCallback onLogout;
+  final VoidCallback? onConnections;
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -365,6 +503,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     gw = Gateway(widget.api);
     store = HermesStore(gw);
     store.addListener(_toast);
+    store.addListener(_pullOffer);
     WidgetsBinding.instance.addObserver(this);
     backgroundConnection.onNetworkAvailable = () => unawaited(gw.ensureHealthy());
     backgroundConnection.listen();
@@ -447,6 +586,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _snack(t);
   }
 
+  bool _pullDialogOpen = false;
+
+  /// A send was refused because another device owns the session: offer to pull it here.
+  Future<void> _pullOffer() async {
+    if (store.pendingPull == null || store.pulling || _pullDialogOpen || !mounted) return;
+    _pullDialogOpen = true;
+    try {
+      final ok = await showDDialog<bool>(context, (c) => DDialog(
+            title: 'الجلسة مفتوحة على جهاز آخر',
+            body: store.pullError ??
+                'هذه الجلسة مفتوحة الآن على جهاز آخر. اسحبها إلى الجوال لتكمل من هنا؛ '
+                    'وإن كان هناك دور قيد التشغيل فسيُطلب من ذلك الجهاز إيقافه أولًا.',
+            actions: [
+              DBtn(label: 'اسحب إلى الجوال', onPressed: () => Navigator.of(c).pop(true)),
+              DBtn(label: 'إلغاء', kind: DBtnKind.outline, onPressed: () => Navigator.of(c).pop(false)),
+            ],
+          ));
+      if (ok == true) {
+        unawaited(store.acceptPull());
+      } else {
+        store.dismissPull();
+      }
+    } finally {
+      _pullDialogOpen = false;
+    }
+  }
+
   void _snack(String t) => DFeedback.show(context, t);
 
   @override
@@ -468,7 +634,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       builder: (context, _) => Scaffold(
         key: scaffoldKey,
         backgroundColor: kBg,
-        drawer: SessionsDrawer(store: store, onLogout: widget.onLogout, onBackground: _backgroundSettings),
+        drawer: SessionsDrawer(store: store, onLogout: widget.onLogout, onBackground: _backgroundSettings, onConnections: widget.onConnections),
         drawerEdgeDragWidth: 60,
         body: SafeArea(
           child: Column(
@@ -620,8 +786,10 @@ String _sourceLabel(String s) => switch (s) {
     };
 
 class SessionsDrawer extends StatefulWidget {
-  const SessionsDrawer({super.key, required this.store, required this.onLogout, this.onBackground});
+  const SessionsDrawer(
+      {super.key, required this.store, required this.onLogout, this.onBackground, this.onConnections});
   final VoidCallback? onBackground;
+  final VoidCallback? onConnections;
   final HermesStore store;
   final VoidCallback onLogout;
   @override
@@ -630,6 +798,18 @@ class SessionsDrawer extends StatefulWidget {
 
 class _SessionsDrawerState extends State<SessionsDrawer> {
   String q = '';
+  String? _connName;
+
+  @override
+  void initState() {
+    super.initState();
+    () async {
+      try {
+        final act = await Connections.instance.active();
+        if (mounted) setState(() => _connName = act?.name);
+      } catch (_) {}
+    }();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -642,7 +822,7 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
       final ok = await showDDialog<bool>(context, (c) => DDialog(
           title: 'تسجيل الخروج',
           kind: DNoticeKind.warning,
-          body: 'سيُحذف عنوان الخادم وبيانات الدخول من هذا الجهاز.',
+          body: 'ستُنهى الجلسة الحالية لهذه البوابة. البوابات المحفوظة تبقى في «البوابات والاتصال».',
           actions: [
             DBtn(label: 'إلغاء', kind: DBtnKind.outline, onPressed: () => Navigator.of(c).pop(false)),
             DBtn(label: 'خروج', icon: tb.Logout.new, kind: DBtnKind.danger, haptic: Hx.heavy, onPressed: () => Navigator.of(c).pop(true)),
@@ -743,7 +923,7 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
       );
     }
 
-    Widget footerBtn(IconCtor icon, String label, VoidCallback onTap) => Material(
+    Widget footerBtn(IconCtor icon, String label, VoidCallback onTap, {String? value}) => Material(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(D.rSm),
           child: InkWell(
@@ -760,6 +940,14 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
                   ic(icon, size: 18, color: D.muted),
                   const SizedBox(width: 12),
                   Expanded(child: Text(label, style: txt(14, color: D.fg.withValues(alpha: 0.86)))),
+                  if (value != null)
+                    Flexible(
+                      child: Text(value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.left,
+                          style: txt(11.5, color: D.faint)),
+                    ),
                 ]),
               ),
             ),
@@ -847,6 +1035,8 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
                     ]),
             ),
             Container(height: 1, margin: const EdgeInsets.symmetric(vertical: 6), color: D.borderSoft),
+            if (widget.onConnections != null)
+              footerBtn(tb.Server2.new, 'البوابات والاتصال', widget.onConnections!, value: _connName),
             if (widget.onBackground != null) footerBtn(tb.Bolt.new, 'الاتصال في الخلفية', widget.onBackground!),
             Row(children: [
               Expanded(child: footerBtn(tb.Logout.new, 'تسجيل الخروج', confirmLogout)),
@@ -2307,6 +2497,512 @@ class DPageTransitions extends PageTransitionsBuilder {
           position: Tween(begin: Offset(rtl ? -0.08 : 0.08, 0), end: Offset.zero).animate(a),
           child: FadeTransition(opacity: a, child: child),
         ),
+      ),
+    );
+  }
+}
+
+/// Small header for pushed pages: back on the right (RTL), title after it.
+class _PageBar extends StatelessWidget {
+  const _PageBar({required this.title});
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.fromLTRB(6, 6, 12, 4),
+        child: Row(children: [
+          DIconBtn(
+            icon: tb.ArrowRight.new,
+            size: 40,
+            tooltip: 'رجوع',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: Text(title, style: txt(17, weight: FontWeight.w700))),
+        ]),
+      );
+}
+
+/// Saved gateways: switch, add, edit, delete. Switching logs in to the chosen
+/// gateway and hands the fresh [HermesApi] back to the caller.
+class ConnectionsPage extends StatefulWidget {
+  const ConnectionsPage({super.key, required this.api, required this.onSwitched, required this.onLoggedOut});
+
+  final HermesApi api;
+  final void Function(HermesApi) onSwitched;
+  final VoidCallback onLoggedOut;
+
+  @override
+  State<ConnectionsPage> createState() => _ConnectionsPageState();
+}
+
+class _ConnectionsPageState extends State<ConnectionsPage> {
+  List<Conn> conns = [];
+  String? activeId;
+  String busyId = '';
+  String? error;
+  bool loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    final s = await Connections.instance.list();
+    final id = await Connections.instance.activeId();
+    if (!mounted) return;
+    setState(() {
+      conns = s;
+      activeId = id;
+      loaded = true;
+    });
+  }
+
+  Future<void> _switchTo(Conn c) async {
+    setState(() {
+      busyId = c.id;
+      error = null;
+    });
+    final a = HermesApi(Connections.normalizeUrl(c.url), c.user, c.pass)..connId = c.id;
+    try {
+      await a.login();
+      await a.ticket(); // prove the WS leg before leaving the page
+      await a.save();
+      if (!mounted) return;
+      widget.onSwitched(a);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        busyId = '';
+        error = 'تعذر الاتصال بـ «${c.name.isEmpty ? Connections.defaultName(c.url) : c.name}»: $e';
+      });
+    }
+  }
+
+  Future<void> _addNew() async {
+    final r = await Navigator.of(context).push<Object>(
+        MaterialPageRoute(builder: (_) => const ConnectionEditorPage()));
+    if (!mounted) return;
+    if (r is HermesApi) {
+      widget.onSwitched(r);
+    } else if (r == 'deleted') {
+      await _reload();
+    }
+  }
+
+  Future<void> _edit(Conn c) async {
+    final r = await Navigator.of(context)
+        .push<Object>(MaterialPageRoute(builder: (_) => ConnectionEditorPage(existing: c)));
+    if (!mounted) return;
+    if (r is HermesApi) {
+      // Saved and verified: it is now the active gateway, reconnect to it.
+      widget.onSwitched(r);
+    } else if (r == 'deleted') {
+      if (c.id == activeId) {
+        widget.onLoggedOut();
+      } else {
+        await _reload();
+      }
+    }
+  }
+
+  Widget _row(Conn c) {
+    final active = c.id == activeId;
+    final busy = busyId == c.id;
+    final label = c.name.isEmpty ? Connections.defaultName(c.url) : c.name;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: busy ? null : () => active ? _edit(c) : _switchTo(c),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 58),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 9, 6, 9),
+            child: Row(children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: active ? D.accentWash : D.surfaceHi,
+                  borderRadius: BorderRadius.circular(D.rSm),
+                  border: Border.all(color: active ? D.accentDim.withValues(alpha: 0.5) : D.borderSoft),
+                ),
+                child: Center(child: ic(active ? tb.PlugConnected.new : tb.World.new, size: 17, color: active ? D.accent : D.muted)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: txt(14.5, weight: FontWeight.w600, height: 1.3)),
+                      const SizedBox(height: 2),
+                      Text(c.url,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.ltr,
+                          style: txt(11.5, color: D.faint, height: 1.3)),
+                    ]),
+              ),
+              if (busy)
+                const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimary))
+              else if (active)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 7),
+                  child: ic(tb.CircleCheck.new, size: 19, color: D.accent),
+                ),
+              DIconBtn(icon: tb.Edit.new, size: 36, tooltip: 'تعديل', onPressed: busy ? null : () => _edit(c)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _addRow() => Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _addNew,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 56),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: D.surfaceHi,
+                    borderRadius: BorderRadius.circular(D.rSm),
+                    border: Border.all(color: D.borderSoft),
+                  ),
+                  child: Center(child: ic(tb.Plus.new, size: 17, color: D.accent)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: Text('إضافة بوابة', style: txt(14.5, weight: FontWeight.w600, color: D.accent))),
+              ]),
+            ),
+          ),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBg,
+      body: SafeArea(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const _PageBar(title: 'البوابات والاتصال'),
+          Expanded(
+            child: !loaded
+                ? const Center(child: CircularProgressIndicator(color: kPrimary))
+                : ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 22), children: [
+                    if (error != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(11),
+                        decoration: BoxDecoration(
+                          color: D.danger.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(D.rSm),
+                          border: Border.all(color: D.danger.withValues(alpha: 0.4)),
+                        ),
+                        child: Row(children: [
+                          ic(tb.AlertCircle.new, size: 15, color: D.danger),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(error!, style: txt(12.5, color: D.danger))),
+                        ]),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    const DSection('البوابات المحفوظة'),
+                    DCard(
+                      pad: const EdgeInsets.symmetric(vertical: 3),
+                      child: Column(children: [
+                        for (var i = 0; i < conns.length; i++) ...[
+                          if (i > 0)
+                            Container(
+                                height: 1,
+                                margin: const EdgeInsets.symmetric(horizontal: 12),
+                                color: D.borderSoft),
+                          _row(conns[i]),
+                        ],
+                        if (conns.isNotEmpty)
+                          Container(
+                              height: 1,
+                              margin: const EdgeInsets.symmetric(horizontal: 12),
+                              color: D.borderSoft),
+                        _addRow(),
+                      ]),
+                    ),
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        'المحلي يعمل عبر Tailscale والريموت عبر HTTPS بدون Tailscale. التبديل يغلق الجلسة الحالية ويفتح اتصالًا جديدًا بالبوابة المختارة.',
+                        style: txt(11.5, color: D.faint, height: 1.5),
+                      ),
+                    ),
+                  ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Add or edit one gateway. Saving verifies login + WS ticket first, then hands
+/// the ready [HermesApi] back; deleting returns the string `deleted`.
+class ConnectionEditorPage extends StatefulWidget {
+  const ConnectionEditorPage({super.key, this.existing});
+
+  final Conn? existing;
+
+  @override
+  State<ConnectionEditorPage> createState() => _ConnectionEditorPageState();
+}
+
+class _ConnectionEditorPageState extends State<ConnectionEditorPage> {
+  late final TextEditingController name = TextEditingController(text: widget.existing?.name ?? '');
+  late final TextEditingController url = TextEditingController(text: widget.existing?.url ?? '');
+  late final TextEditingController user = TextEditingController(text: widget.existing?.user ?? '');
+  late final TextEditingController pass = TextEditingController(text: widget.existing?.pass ?? '');
+  bool obscure = true;
+  bool busy = false;
+  bool testBusy = false;
+  String? error;
+  String? okMsg;
+
+  @override
+  void dispose() {
+    name.dispose();
+    url.dispose();
+    user.dispose();
+    pass.dispose();
+    super.dispose();
+  }
+
+  String? _validate() {
+    if (url.text.trim().isEmpty) return 'أدخل عنوان الخادم.';
+    if (user.text.trim().isEmpty) return 'أدخل اسم المستخدم.';
+    if (pass.text.isEmpty) return 'أدخل كلمة المرور.';
+    return null;
+  }
+
+  HermesApi? _candidate() {
+    final err = _validate();
+    if (err != null) {
+      setState(() {
+        error = err;
+        okMsg = null;
+      });
+      return null;
+    }
+    return HermesApi(Connections.normalizeUrl(url.text), user.text.trim(), pass.text)
+      ..connId = widget.existing?.id;
+  }
+
+  Future<void> _test() async {
+    final a = _candidate();
+    if (a == null) return;
+    setState(() {
+      testBusy = true;
+      error = null;
+      okMsg = null;
+    });
+    try {
+      await a.login();
+      await a.ticket();
+      if (mounted) setState(() => okMsg = 'الاتصال ناجح — الخادم يستجيب.');
+    } catch (e) {
+      if (mounted) setState(() => error = '$e');
+    }
+    if (mounted) setState(() => testBusy = false);
+  }
+
+  Future<void> _save() async {
+    final a = _candidate();
+    if (a == null) return;
+    setState(() {
+      busy = true;
+      error = null;
+      okMsg = null;
+    });
+    try {
+      await a.login();
+      await a.ticket();
+      await a.save();
+      if (!mounted) return;
+      Navigator.of(context).pop(a);
+      return;
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          error = '$e';
+          busy = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _delete() async {
+    final c = widget.existing;
+    if (c == null) return;
+    final label = c.name.isEmpty ? Connections.defaultName(c.url) : c.name;
+    final ok = await showDDialog<bool>(context, (x) => DDialog(
+          title: 'حذف البوابة',
+          kind: DNoticeKind.warning,
+          body: 'سيُحذف «$label» من هذا الجهاز. يمكن إضافته مرة أخرى في أي وقت.',
+          actions: [
+            DBtn(label: 'إلغاء', kind: DBtnKind.outline, onPressed: () => Navigator.of(x).pop(false)),
+            DBtn(label: 'حذف', icon: tb.Trash.new, kind: DBtnKind.danger, haptic: Hx.heavy, onPressed: () => Navigator.of(x).pop(true)),
+          ],
+        ));
+    if (ok != true || !mounted) return;
+    await Connections.instance.remove(c.id);
+    if (!mounted) return;
+    Navigator.of(context).pop('deleted');
+  }
+
+  Widget _efield(String label, TextEditingController c, IconCtor icon,
+      {String? hint, bool obscureField = false, Widget? suffix}) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 6),
+        child: Text(label, style: txt(12.5, color: D.muted, weight: FontWeight.w600)),
+      ),
+      DInput(
+        child: Row(children: [
+          ic(icon, size: 16),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: c,
+              obscureText: obscureField,
+              textDirection: TextDirection.ltr,
+              style: txt(14.5),
+              cursorColor: D.accent,
+              decoration: InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                hintText: hint,
+                hintStyle: txt(13.5, color: D.faint),
+              ),
+            ),
+          ),
+          ?suffix,
+        ]),
+      ),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final editing = widget.existing != null;
+    return Scaffold(
+      backgroundColor: kBg,
+      body: SafeArea(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _PageBar(title: editing ? 'تعديل البوابة' : 'بوابة جديدة'),
+          Expanded(
+            child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
+              DCard(
+                pad: const EdgeInsets.all(16),
+                shadow: D.lift,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  _efield('الاسم', name, tb.Tag.new, hint: 'اختياري'),
+                  const SizedBox(height: 14),
+                  _efield('عنوان الخادم', url, tb.World.new),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, left: 4, right: 4),
+                    child: Text('مثال: 100.64.0.1:9131 أو https://gateway.example.com',
+                        style: txt(11, color: D.faint, height: 1.4)),
+                  ),
+                  const SizedBox(height: 12),
+                  _efield('اسم المستخدم', user, tb.User.new),
+                  const SizedBox(height: 14),
+                  _efield(
+                    'كلمة المرور',
+                    pass,
+                    tb.Lock.new,
+                    obscureField: obscure,
+                    suffix: DIconBtn(
+                      icon: (obscure ? tb.Eye.new : tb.EyeOff.new),
+                      size: 32,
+                      tooltip: obscure ? 'إظهار' : 'إخفاء',
+                      onPressed: () => setState(() => obscure = !obscure),
+                    ),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: D.danger.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(D.rSm),
+                        border: Border.all(color: D.danger.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(children: [
+                        ic(tb.AlertCircle.new, size: 15, color: D.danger),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(error!, style: txt(12.5, color: D.danger))),
+                      ]),
+                    ),
+                  ],
+                  if (okMsg != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: D.ok.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(D.rSm),
+                        border: Border.all(color: D.ok.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(children: [
+                        ic(tb.CircleCheck.new, size: 15, color: D.ok),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(okMsg!, style: txt(12.5, color: D.ok))),
+                      ]),
+                    ),
+                  ],
+                  const SizedBox(height: 18),
+                  Row(children: [
+                    Expanded(
+                      child: DBtn(
+                        label: testBusy ? 'جارٍ الاختبار...' : 'اختبار الاتصال',
+                        kind: DBtnKind.outline,
+                        icon: tb.PlugConnected.new,
+                        onPressed: (busy || testBusy) ? null : _test,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: DBtn(
+                        label: busy ? 'جارٍ الحفظ...' : (editing ? 'حفظ واتصال' : 'إضافة واتصال'),
+                        icon: tb.Check.new,
+                        onPressed: (busy || testBusy) ? null : _save,
+                      ),
+                    ),
+                  ]),
+                ]),
+              ),
+              if (editing) ...[
+                const SizedBox(height: 22),
+                DBtn(
+                  label: 'حذف البوابة',
+                  kind: DBtnKind.danger,
+                  icon: tb.Trash.new,
+                  onPressed: busy ? null : _delete,
+                ),
+              ],
+            ]),
+          ),
+        ]),
       ),
     );
   }

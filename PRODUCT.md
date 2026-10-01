@@ -3,7 +3,7 @@
 register: product
 
 ## Product purpose
-An Android Flutter client for a private Hermes remote gateway over Tailscale. Users manage ongoing agent sessions, send attachments, steer work, queue follow-up prompts, and receive completion alerts.
+An Android Flutter client for private Hermes gateways. Saved gateways cover both connection styles — the local serve over Tailscale and a public remote gateway over HTTPS (no Tailscale) — and users switch between them from the connections screen. Users manage ongoing agent sessions, send attachments, steer work, queue follow-up prompts, pull a session away from another device, and receive completion alerts.
 
 ## Users and scene
 Users switch between phone apps and check long-running agent tasks, often on a dim phone screen. Preserve the warm dark interface rather than introducing a new visual direction.

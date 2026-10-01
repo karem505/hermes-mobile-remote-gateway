@@ -34,6 +34,32 @@ class ChatItem {
   int? seconds;
 }
 
+/// A send refused because another device holds the session (``SESSION_NOT_OWNED``):
+/// the UI offers to pull it here, then resends exactly this draft.
+class PullOffer {
+  PullOffer(this.text, this.sessionId);
+  final String text;
+  final String sessionId;
+}
+
+/// Arabic label for a lease ``surface`` value (desktop | mobile | tui | gateway ...).
+String _surfaceAr(String? surface) {
+  switch ((surface ?? '').trim().toLowerCase()) {
+    case 'desktop':
+      return 'سطح المكتب';
+    case 'mobile':
+      return 'الجوال';
+    case 'tui':
+    case 'cli':
+      return 'الطرفية';
+    case 'gateway':
+    case 'bot':
+      return 'البوت';
+    default:
+      return 'جهاز آخر';
+  }
+}
+
 class ActiveSession {
   ActiveSession(this.id, this.key, this.title, this.status, this.model, this.lastActive);
   final String id; // live runtime id
@@ -158,6 +184,12 @@ class HermesStore extends ChangeNotifier {
   Map<String, dynamic> info = {};
   PendingRequest? pending;
   String? toast;
+
+  /// A refused draft waiting behind the "pull from the other device" offer.
+  PullOffer? pendingPull;
+  bool pulling = false;
+  String? pullError;
+
   bool submitting = false;
   final queued = <QueuedTurn>[];
   final attachments = <Attachment>[]; // current composer draft
@@ -389,10 +421,60 @@ class HermesStore extends ChangeNotifier {
       items.remove(item);
       if (sid == sessionId) {
         if (!steer) running = false;
-        _flash(steer ? 'تعذر التوجيه: $e' : 'تعذر الإرسال: $e');
+        // Owned elsewhere: offer the pull (reason travels as machine-readable data;
+        // the message check keeps older serves without the reason field working).
+        final ownedElsewhere = !steer &&
+            e is RpcError &&
+            (e.reason == 'SESSION_NOT_OWNED' || e.message.contains('another Hermes window'));
+        if (ownedElsewhere) {
+          pendingPull = PullOffer(text, sessionId);
+          notifyListeners();
+        } else {
+          _flash(steer ? 'تعذر التوجيه: $e' : 'تعذر الإرسال: $e');
+        }
       }
       return false;
     }
+  }
+
+  /// Pull the session from the device that owns it, then resend the refused draft.
+  Future<void> acceptPull() async {
+    final offer = pendingPull;
+    if (offer == null || pulling) return;
+    pulling = true;
+    pullError = null;
+    notifyListeners();
+    try {
+      final r = await gw.call('session.takeover', {'session_id': offer.sessionId}, const Duration(seconds: 45));
+      final surface = r is Map ? '${r['holder_surface'] ?? ''}' : '';
+      pendingPull = null;
+      pulling = false;
+      notifyListeners();
+      _flash(surface.isEmpty ? 'تم سحب الجلسة إلى الجوال' : 'تم سحب الجلسة من ${_surfaceAr(surface)} إلى الجوال');
+      if (sid == offer.sessionId && !running) await _sendDraft(offer.text, steer: false);
+    } on RpcError catch (e) {
+      pulling = false;
+      final holder = e.data is Map ? (e.data as Map)['holder_surface'] as String? : null;
+      pullError = switch (e.reason) {
+        'TAKEOVER_BUSY' =>
+          'الجلسة تعمل الآن على ${_surfaceAr(holder)} ولم ينتهِ دورها بعد؛ أوقف الدور من هناك ثم حاول السحب مرة أخرى.',
+        'TAKEOVER_RACED' => 'بدأت الجلسة دورًا جديدًا على الجهاز الآخر؛ انتظر قليلًا ثم حاول مرة أخرى.',
+        'SESSION_CAP' => 'لا يمكن سحب الجلسة الآن: بلغت حد الجلسات المتزامنة.',
+        _ => 'تعذر سحب الجلسة: $e',
+      };
+      notifyListeners();
+    } catch (e) {
+      pulling = false;
+      pullError = 'تعذر سحب الجلسة: $e';
+      notifyListeners();
+    }
+  }
+
+  void dismissPull() {
+    if (pendingPull == null && pullError == null) return;
+    pendingPull = null;
+    pullError = null;
+    notifyListeners();
   }
 
   Future<void> _slash(String cmd) async {
@@ -960,6 +1042,18 @@ class HermesStore extends ChangeNotifier {
       case 'session.title':
         final t = '${payload['title'] ?? ''}';
         if (t.isNotEmpty) title = t;
+      case 'session.taken_over':
+        // Another surface pulled this session: any turn here was interrupted and the
+        // slot is no longer ours — a new send will offer to pull it back.
+        if (storedId != null && '${payload['session_id'] ?? ''}' == storedId) {
+          _closeThinking();
+          running = false;
+          statusText = '';
+          items.add(ChatItem.notice(
+              'سُحبت هذه الجلسة إلى ${_surfaceAr('${payload['by'] ?? ''}')}؛ لإكمال العمل من الجوال اسحبها من جديد عند الإرسال.'));
+        } else {
+          return;
+        }
       case 'error':
         _closeThinking();
         running = false;

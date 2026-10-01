@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'connections.dart';
+
 class AuthError implements Exception {
   AuthError(this.message);
   final String message;
@@ -15,9 +17,19 @@ class AuthError implements Exception {
 }
 
 class RpcError implements Exception {
-  RpcError(this.code, this.message);
+  RpcError(this.code, this.message, [this.data]);
   final int code;
   final String message;
+
+  /// Machine-readable error payload (``error.data``), e.g. ``{'reason': 'SESSION_NOT_OWNED'}``.
+  final Object? data;
+
+  /// ``error.data.reason`` when the server sent a structured refusal.
+  String? get reason {
+    final d = data;
+    return d is Map && d['reason'] is String ? d['reason'] as String : null;
+  }
+
   @override
   String toString() => message;
 }
@@ -31,6 +43,9 @@ class HermesApi {
   String pass;
   String cookie;
 
+  /// Id of the saved gateway this session belongs to (see [Connections]).
+  String? connId;
+
   static const _store = FlutterSecureStorage();
   static const _timeout = Duration(seconds: 20);
 
@@ -39,7 +54,12 @@ class HermesApi {
     final user = await _store.read(key: 'user');
     final pass = await _store.read(key: 'pass');
     if (url == null || user == null || pass == null) return null;
-    return HermesApi(url, user, pass, await _store.read(key: 'cookie') ?? '');
+    final a = HermesApi(url, user, pass, await _store.read(key: 'cookie') ?? '');
+    try {
+      final adopted = await Connections.instance.adoptLegacy();
+      a.connId = adopted?.id ?? (await Connections.instance.active())?.id;
+    } catch (_) {}
+    return a;
   }
 
   Future<void> save() async {
@@ -47,6 +67,31 @@ class HermesApi {
     await _store.write(key: 'user', value: user);
     await _store.write(key: 'pass', value: pass);
     await _store.write(key: 'cookie', value: cookie);
+    try {
+      final s = Connections.instance;
+      final prior = connId == null
+          ? null
+          : (await s.list()).where((c) => c.id == connId).firstOrNull;
+      final c = Conn(
+        id: connId ?? Connections.newId(),
+        name: prior?.name ?? Connections.defaultName(baseUrl),
+        url: baseUrl,
+        user: user,
+        pass: pass,
+      );
+      await s.upsert(c);
+      await s.setActive(c.id);
+      connId = c.id;
+    } catch (_) {}
+  }
+
+  /// End this gateway's session: forget the login cookie, keep the saved
+  /// gateways themselves.
+  Future<void> logout() async {
+    cookie = '';
+    try {
+      await _store.delete(key: 'cookie');
+    } catch (_) {}
   }
 
   static Future<void> clear() => _store.deleteAll();
@@ -306,7 +351,8 @@ class Gateway extends ChangeNotifier {
       if (c == null) return;
       _pendingTimers.remove(id.toString())?.cancel();
       if (error is Map) {
-        c.completeError(RpcError((error['code'] as num?)?.toInt() ?? 0, '${error['message'] ?? 'خطأ'}'));
+        c.completeError(RpcError(
+            (error['code'] as num?)?.toInt() ?? 0, '${error['message'] ?? 'خطأ'}', error['data']));
       } else {
         c.complete(msg['result']);
       }
