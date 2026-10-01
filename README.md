@@ -27,13 +27,14 @@ Real captures from an Android phone, not mockups. Private session titles and dev
 
 - **Chat with your own agent:** streaming text, reasoning sections and tool activity.
 - **Manage sessions:** create, search, reopen and close sessions on the connected server.
+- **Pull a session between devices:** if a session is already open on another device, the app offers to pull it here and re-sends your draft instead of refusing to work. A companion desktop plugin (see below) pulls in the other direction.
 - **Choose models:** searchable model picker, English Thinking levels and explicit confirmation when the server warns about a context-sensitive or expensive switch.
 - **Stay in control:** stop, steer an active turn, or queue a follow-up. Attachments belong to the specific turn, not a later draft.
 - **Work with files:** attach files/images, preview received images and download/open generated files.
 - **Dictate prompts:** microphone recording with transcription through your configured backend.
 - **Keep work visible:** Android foreground connection service and local completion notifications while the process is alive.
 - **Watch background work:** a live panel above the composer lists long-running `terminal(background=true)` processes and delegated subagents for the open session, streams their output, and lets you stop a running one or dismiss a finished one.
-- **Connect privately:** use your own Hermes host through Tailscale; no public port forwarding is required.
+- **Connect your way:** save multiple gateways and switch with one tap — a private Tailscale host, or a public HTTPS deployment with no Tailscale at all.
 - **Sign in securely:** credentials stored with Flutter Secure Storage; optional biometric app unlock.
 
 ## Download and install
@@ -61,11 +62,25 @@ The app uses password login, a session cookie, a single-use WebSocket ticket and
 
 Start with [Tailscale setup](docs/TAILSCALE.md), including MagicDNS, authentication, permissions, HTTPS, background operation and troubleshooting.
 
+The app can also store **multiple gateways** — for example your tailnet host plus a public HTTPS deployment — and switch between them with one tap from the gateways screen. Each gateway keeps its own credentials in the platform keychain. A public HTTPS gateway does not need Tailscale on the phone at all.
+
+## Desktop plugin (session pull)
+
+The session-pull feature pairs with a single-file Hermes desktop plugin. To install it, copy the folder from this repository into your desktop plugins directory:
+
+```sh
+mkdir -p ~/.hermes/desktop-plugins/pull-session
+cp desktop-plugin/pull-session/plugin.js ~/.hermes/desktop-plugins/pull-session/plugin.js
+```
+
+Restart the Hermes desktop app once. The command palette (`Cmd+K`) then gains **"اسحب الجلسة إلى هذا الجهاز"** (Pull session to this device), and the window shows a notification when another device pulls a session away from it. The plugin needs gateway support for `session.takeover`; if the connected backend predates it, the command reports that the feature needs an app restart rather than failing silently.
+
 ## Requirements and compatibility
 
 - Android **7.0+ (API 24+)**, ARM64. Minimum API verified from the release APK manifest; real-device testing was on Android 16, not every supported OS version.
 - A reachable Hermes Agent installation with `hermes serve`, password authentication, `/api/auth/ws-ticket` and `/api/ws`.
 - Tailscale on both devices, with an access policy allowing the selected gateway port.
+- For the session-pull feature: a gateway that exposes `session.takeover`. Without it the app still works; the pull is simply refused with a clear message.
 - A model/provider configured on the Hermes host.
 - Tested development environment: Flutter **3.47.5**, Dart **3.13.4**, JDK **17**.
 - Backend development baseline: Hermes source revision `c07501ec411b5364e5b12b7258c25a6a4c758545`. Compatibility with every upstream release is not guaranteed; check `hermes serve --help` and the [official docs](https://hermes-agent.nousresearch.com/docs/).
@@ -75,7 +90,7 @@ Start with [Tailscale setup](docs/TAILSCALE.md), including MagicDNS, authenticat
 - This is an early community release. Arabic RTL is the current app UI; English app localization is not implemented.
 - Background notifications are **local Android notifications**, not FCM/cloud push. Force-stop, reboot, OEM battery restrictions or a disconnected VPN can interrupt delivery.
 - A short real-device background test observed the same running process, a foreground service and a completion notification. It does not prove hours-long Doze reliability.
-- Session sharing requires clients to use the **same backend/profile**. A separate Desktop backend is not automatically synchronized.
+- Session pull requires both surfaces on the **same backend/profile** with `session.takeover` support; a separate Desktop backend is not automatically synchronized.
 - Files are processed by your host and its selected model/tools. Review your provider's data policy; not all models can interpret images.
 - The app permits HTTP for private-tailnet deployments. Do not send credentials over an untrusted plain-HTTP LAN or public endpoint; use tailnet-only HTTPS where possible.
 
