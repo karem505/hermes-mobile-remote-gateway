@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tb;
 
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
-
 import 'background.dart';
 import 'glass.dart';
 
@@ -122,40 +120,125 @@ Widget ic(IconCtor f, {double size = 18, Color color = D.muted, double? w}) =>
 TextStyle txt(double size, {Color color = D.fg, FontWeight weight = FontWeight.w400, double height = 1.5}) =>
     TextStyle(color: color, fontSize: size, fontWeight: weight, height: height);
 
-/// Flat control with liquid press physics: the jelly stretch, touch glow and
-/// spring of a glass button, without a second lens. Used for every control
-/// that already sits on a glass surface (glass inside glass is avoided).
+/// Liquid press: the control squashes slightly wider than tall on touch and
+/// springs back with a small overshoot, like a drop of glass. Transforms
+/// only, so it costs nothing on the GPU.
 Widget dGlassTap({
   required Widget child,
   required VoidCallback? onTap,
   required ShapeBorder clip,
-  LiquidShape shape = const LiquidOval(),
+  Object? shape,
   Hx haptic = Hx.light,
   String label = '',
   double? width,
   double? height,
   double press = 0.95,
 }) {
-  return GlassButton.custom(
-    onTap: onTap == null
-        ? () {}
-        : () {
-            H.fire(haptic);
-            onTap();
-          },
-    enabled: onTap != null,
-    style: GlassButtonStyle.transparent,
-    shape: shape,
-    width: width,
-    height: height,
+  return DLiquidPress(
+    onTap: onTap,
+    haptic: haptic,
     label: label,
-    interactionScale: press,
-    stretch: 0.35,
-    child: label.isEmpty ? child : ExcludeSemantics(child: child),
+    clip: clip,
+    child: SizedBox(width: width, height: height, child: child),
   );
 }
 
-LiquidShape _pill(double h) => LiquidRoundedSuperellipse(borderRadius: h / 2);
+class DLiquidPress extends StatefulWidget {
+  const DLiquidPress({
+    super.key,
+    required this.child,
+    required this.onTap,
+    this.haptic = Hx.light,
+    this.label = '',
+    this.clip = const StadiumBorder(),
+  });
+  final Widget child;
+  final VoidCallback? onTap;
+  final Hx haptic;
+  final String label;
+  final ShapeBorder clip;
+
+  @override
+  State<DLiquidPress> createState() => _DLiquidPressState();
+}
+
+class _DLiquidPressState extends State<DLiquidPress> with SingleTickerProviderStateMixin {
+  // Spring: quick squash in, elastic release.
+  late final AnimationController c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 90),
+    reverseDuration: const Duration(milliseconds: 420),
+  );
+  late final Animation<double> t = CurvedAnimation(parent: c, curve: Curves.easeOut, reverseCurve: Curves.elasticIn);
+  Offset? _down;
+
+  @override
+  void dispose() {
+    c.dispose();
+    super.dispose();
+  }
+
+  void _release() {
+    if (c.status != AnimationStatus.dismissed) c.reverse();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = widget.onTap != null;
+    Widget body = AnimatedBuilder(
+      animation: t,
+      child: widget.child,
+      builder: (context, child) {
+        final v = t.value;
+        return Transform(
+          alignment: Alignment.center,
+          // Wider and shorter while pressed: the liquid squash.
+          transform: Matrix4.diagonal3Values(1 + 0.035 * v, 1 - 0.07 * v, 1),
+          child: Opacity(opacity: enabled ? 1 : 0.5, child: child),
+        );
+      },
+    );
+    body = Material(
+      type: MaterialType.transparency,
+      shape: widget.clip,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        customBorder: widget.clip,
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: Colors.white.withValues(alpha: 0.06),
+        onTapDown: enabled
+            ? (d) {
+                _down = d.globalPosition;
+                c.forward();
+              }
+            : null,
+        onTapCancel: _release,
+        onTap: enabled
+            ? () {
+                _release();
+                H.fire(widget.haptic);
+                widget.onTap!();
+              }
+            : null,
+        child: body,
+      ),
+    );
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: widget.label.isEmpty ? null : widget.label,
+      excludeSemantics: widget.label.isNotEmpty,
+      child: Listener(onPointerMove: (e) {
+        if (_down != null && (e.position - _down!).distance > 18) {
+          _down = null;
+          _release();
+        }
+      }, child: body),
+    );
+  }
+}
+
+Object _pill(double h) => h;
 
 /// Rounded elevated surface: the one container used by every card-like surface.
 class DCard extends StatelessWidget {
@@ -244,26 +327,24 @@ class DBtn extends StatelessWidget {
       // On the page: the button is its own drop of glass (coral for the
       // primary action, warm smoke for the rest).
       if (level == GlassLevel.none && kind != DBtnKind.ghost) {
-        return GlassButton.custom(
-          onTap: enabled
-              ? () {
-                  H.fire(hx);
-                  onPressed!();
-                }
-              : () {},
-          enabled: enabled,
-          useOwnLayer: true,
+        return dGlassTap(
+          onTap: onPressed,
+          haptic: hx,
           width: w,
-          shape: _pill(h),
           label: label,
-          settings: !enabled
-              ? G.control()
-              : switch (kind) {
-                  DBtnKind.fill => G.accent(),
-                  DBtnKind.danger => G.accent(body: D.danger),
-                  _ => G.control(),
-                },
-          child: ExcludeSemantics(child: content),
+          clip: const StadiumBorder(),
+          child: DGlassPill(
+            width: w,
+            body: !enabled
+                ? D.surfaceHi
+                : switch (kind) {
+                    DBtnKind.fill => D.accent,
+                    DBtnKind.danger => D.danger,
+                    _ => D.surfaceHi,
+                  },
+            tint: kind == DBtnKind.fill || kind == DBtnKind.danger ? 0.96 : 0.8,
+            child: content,
+          ),
         );
       }
       // On a glass surface: a solid fill with liquid press physics.
@@ -334,7 +415,7 @@ class DIconBtn extends StatelessWidget {
     );
     final label = tooltip ?? '';
     Widget b;
-    if (level == GlassLevel.surface || (level == GlassLevel.layer && primary)) {
+    if (level != GlassLevel.none) {
       // On a glass surface: solid disc, liquid physics.
       final bg = primary
           ? (active ? D.danger : D.accent)
@@ -359,25 +440,22 @@ class DIconBtn extends StatelessWidget {
         ),
       );
     } else {
-      // On the page (own drop) or in a shared layer (blends with siblings).
-      b = GlassButton.custom(
-        onTap: enabled
-            ? () {
-                H.fire(hx);
-                onPressed!();
-              }
-            : () {},
-        enabled: enabled,
+      // Floating on the page: its own small glass drop.
+      b = dGlassTap(
+        onTap: onPressed,
+        haptic: hx,
         width: size,
         height: size,
         label: label,
-        useOwnLayer: level == GlassLevel.none,
-        settings: level == GlassLevel.none
-            ? (primary
-                ? G.accent(body: active ? D.danger : D.accent)
-                : G.control(body: active ? D.accentWash : D.surfaceHi))
-            : null,
-        child: glyph,
+        clip: const CircleBorder(),
+        child: DGlassPill(
+          width: size,
+          height: size,
+          radius: size / 2,
+          body: primary ? (active ? D.danger : D.accent) : (active ? D.accentWash : D.surfaceHi),
+          tint: primary ? 0.96 : 0.8,
+          child: glyph,
+        ),
       );
     }
     return tooltip == null ? b : Tooltip(message: tooltip!, child: b);
@@ -526,7 +604,7 @@ class DDialog extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 480),
         child: DGlass(
           radius: 28,
-          premium: true,
+          panel: true,
           tint: G.panelTint,
           pad: const EdgeInsets.fromLTRB(20, 18, 20, 20),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -566,31 +644,29 @@ class DDialog extends StatelessWidget {
 
 /// Non-blocking feedback, used by copy, uploads, configuration and errors.
 class DFeedback {
-  static VoidCallback? _dismiss;
-
   static void show(BuildContext context, String message, {DNoticeKind? kind}) {
     final tone = kind ?? (message.startsWith('تعذر') || message.startsWith('فشل')
         ? DNoticeKind.error : message.startsWith('تم ') ? DNoticeKind.success : DNoticeKind.info);
-    _dismiss?.call();
-    _dismiss = null;
-    // A floating glass toast at the top, clear of the composer and keyboard.
-    try {
-      _dismiss = GlassToast.show(
-        context,
-        message: message,
-        icon: ic(_noticeIcon(tone), size: 18, color: _noticeColor(tone)),
-        type: switch (tone) {
-          DNoticeKind.error => GlassToastType.error,
-          DNoticeKind.success => GlassToastType.success,
-          _ => GlassToastType.info,
-        },
-        position: GlassToastPosition.top,
-        duration: Duration(seconds: tone == DNoticeKind.error ? 7 : 3),
-        settings: G.surface(tint: G.panelTint, body: D.surfaceTop),
-      );
-    } catch (_) {
-      // No overlay (e.g. called during teardown): nothing to show.
-    }
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: D.surfaceTop.withValues(alpha: 0.96),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20),
+          side: const BorderSide(color: D.hairline)),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      duration: Duration(seconds: tone == DNoticeKind.error ? 7 : 3),
+      showCloseIcon: tone == DNoticeKind.error, closeIconColor: D.muted,
+      content: Semantics(liveRegion: true, child: Row(children: [
+        ic(_noticeIcon(tone), size: 18, color: _noticeColor(tone)),
+        const SizedBox(width: 10),
+        Expanded(child: Text(message, maxLines: 4, overflow: TextOverflow.ellipsis,
+          style: txt(13, height: 1.5))),
+      ])),
+    ));
   }
 }
 
@@ -621,13 +697,7 @@ class DReveal extends StatelessWidget {
         // oversized while the content sharpens, and dissolve on the way out.
         transitionBuilder: (w, a) => SlideTransition(
           position: Tween(begin: const Offset(0, 0.05), end: Offset.zero).animate(a),
-          child: GlassMaterializeTransition(
-            animation: a,
-            alignment: alignment,
-            scaleFrom: 1.05,
-            contentSigma: 6,
-            child: w,
-          ),
+          child: dMaterialize(a, w, alignment: alignment, scaleFrom: 1.03),
         ),
         child: show ? KeyedSubtree(key: const ValueKey('on'), child: child) : const SizedBox(key: ValueKey('off'), width: double.infinity),
       ),
@@ -849,25 +919,55 @@ class DSegmented extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final idx = options.indexOf(value);
-    final none = idx < 0; // server default: no level highlighted
     return Directionality(
       textDirection: TextDirection.ltr,
-      child: GlassSegmentedControl(
-        segments: [for (final l in labels) GlassSegment(label: l)],
-        selectedIndex: none ? 0 : idx,
-        onSegmentSelected: (i) {
-          H.fire(Hx.select);
-          onChanged(options[i]);
-        },
+      child: Container(
         height: 42,
-        useOwnLayer: true,
-        backgroundColor: D.bg.withValues(alpha: 0.55),
-        indicatorColor: none ? Colors.transparent : D.surfaceTop.withValues(alpha: 0.9),
-        settings: G.control(body: D.bg, tint: 0.5),
-        glowColor: D.accent.withValues(alpha: 0.25),
-        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-        selectedTextStyle: txt(12.5, color: none ? D.muted : D.fg, weight: none ? FontWeight.w500 : FontWeight.w700),
-        unselectedTextStyle: txt(12.5, color: D.muted, weight: FontWeight.w500),
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: D.bg.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(D.rPill),
+          border: Border.all(color: D.hairline),
+        ),
+        child: LayoutBuilder(builder: (context, c) {
+          final w = c.maxWidth / options.length;
+          return Stack(children: [
+            // The glass drop slides between levels with a liquid overshoot.
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 380),
+              curve: D.spring,
+              left: (idx < 0 ? 0 : idx) * w,
+              top: 0,
+              bottom: 0,
+              width: w,
+              child: AnimatedOpacity(
+                opacity: idx < 0 ? 0 : 1,
+                duration: D.tIn,
+                child: DGlassPill(body: D.surfaceTop, tint: 0.9, child: const SizedBox.expand()),
+              ),
+            ),
+            Row(children: [
+              for (var i = 0; i < options.length; i++)
+                Expanded(
+                  child: DLiquidPress(
+                    onTap: () => onChanged(options[i]),
+                    haptic: Hx.select,
+                    label: labels[i],
+                    child: Center(
+                      child: AnimatedDefaultTextStyle(
+                        duration: D.tIn,
+                        curve: D.ease,
+                        style: txt(12.5,
+                            color: i == idx ? D.fg : D.muted,
+                            weight: i == idx ? FontWeight.w700 : FontWeight.w500),
+                        child: Text(labels[i], maxLines: 1),
+                      ),
+                    ),
+                  ),
+                ),
+            ]),
+          ]);
+        }),
       ),
     );
   }
@@ -1149,17 +1249,14 @@ class DSuggestion extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Floats on the empty page: each suggestion is its own drop of glass.
-    return GlassButton.custom(
-      onTap: () {
-        H.fire(Hx.select);
-        onTap();
-      },
-      useOwnLayer: true,
+    return dGlassTap(
+      onTap: onTap,
+      haptic: Hx.select,
       label: label,
-      shape: const LiquidRoundedSuperellipse(borderRadius: D.rLg),
-      settings: G.control(tint: 0.5),
-      alignment: AlignmentDirectional.centerStart.resolve(Directionality.of(context)),
-      child: ExcludeSemantics(
+      clip: RoundedRectangleBorder(borderRadius: BorderRadius.circular(D.rLg)),
+      child: DGlassPill(
+        radius: D.rLg,
+        tint: 0.62,
         child: Container(
           constraints: const BoxConstraints(minHeight: 46),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),

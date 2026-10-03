@@ -1,61 +1,36 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'design.dart';
 
-/// Liquid Glass layer of the design system.
+/// Liquid Glass layer of the design system, tuned for mid-range Android GPUs.
 ///
 /// Glass is reserved for the control layer that floats over content (top bar,
-/// composer, sheets, dialogs, drawer, menus, toasts). Content itself (message
-/// bubbles, code, rows inside a list) stays solid and readable. Every glass
-/// surface is tinted with the existing warm tokens, so the palette is the same
-/// as the solid design; glass only adds depth, refraction and motion.
+/// composer, cards over the transcript, drawer, sheets, dialogs). Content
+/// stays solid. Every surface is tinted with the existing warm tokens, so the
+/// palette is unchanged.
+///
+/// Rendering budget (120 Hz leaves ~8 ms per frame):
+/// - Bars and cards over the transcript: one shared, grouped backdrop blur
+///   (`BackdropGroup` reads the backdrop once for all of them) plus a static
+///   specular rim. No refraction shader per surface.
+/// - Large panels (drawer, sheet, dialog): no live blur; a dense warm tint and
+///   the same rim. A full-screen blur re-renders on every animation frame.
+/// - Controls on glass: no backdrop of their own, only tint and spring physics.
 class G {
-  /// How strongly a surface keeps its warm body colour. Higher reads calmer
-  /// and keeps text legible; lower lets more of the backdrop through.
-  static const double chromeTint = 0.62; // bars that sit over the transcript
-  static const double panelTint = 0.80; // drawer, dialogs, sheets (dense text)
-  static const double cardTint = 0.70; // floating cards (queue, approvals)
+  static const double chromeTint = 0.66; // bars over the transcript (blurred)
+  static const double panelTint = 0.95; // drawer, dialogs, sheets (no blur)
+  static const double cardTint = 0.74; // floating cards (blurred)
 
-  static LiquidGlassSettings surface({double tint = chromeTint, Color body = D.surface, double thickness = 22}) =>
-      LiquidGlassSettings(
-        glassColor: body.withValues(alpha: tint),
-        thickness: thickness,
-        blur: 12,
-        saturation: 1.25,
-        lightIntensity: 0.55,
-        lightAngle: 0.8,
-        ambientStrength: 0.12,
-        chromaticAberration: 0.006,
-        refractiveIndex: 1.18,
-        glowIntensity: 0.6,
-      );
-
-  /// Raised controls (round buttons, chips) when they float on their own.
-  static LiquidGlassSettings control({Color body = D.surfaceHi, double tint = 0.55}) =>
-      surface(tint: tint, body: body, thickness: 18);
-
-  /// Coral primary action (send, confirm): accent body, a touch more opaque so
-  /// the brand colour reads exactly as before.
-  static LiquidGlassSettings accent({Color body = D.accent}) =>
-      surface(tint: 0.88, body: body, thickness: 20);
-
-  static GlassThemeData theme() => GlassThemeData.simple(
-        blur: 12,
-        thickness: 22,
-        quality: GlassQuality.standard,
-        saturation: 1.25,
-        lightIntensity: 0.55,
-      );
+  static const double blurSigma = 14;
 }
 
-/// Where a control is rendered, so it picks the right glass mode:
-/// - [GlassLevel.none]: on the plain page, it becomes its own glass drop.
-/// - [GlassLevel.layer]: siblings share one liquid layer (they blend together
-///   when they move close, like the top bar buttons).
-/// - [GlassLevel.surface]: already sitting on a glass surface. Glass inside
-///   glass is an anti-pattern, so it renders flat with the glass physics only.
+/// Where a control is rendered, so it picks the right glass treatment.
+/// - [GlassLevel.none]: on the plain page.
+/// - [GlassLevel.layer]: kept for compatibility (treated like none).
+/// - [GlassLevel.surface]: already on a glass surface; renders flat.
 enum GlassLevel { none, layer, surface }
 
 class GlassScopeInfo extends InheritedWidget {
@@ -69,6 +44,15 @@ class GlassScopeInfo extends InheritedWidget {
   bool updateShouldNotify(GlassScopeInfo old) => old.level != level;
 }
 
+/// Shares one backdrop read between every blurred glass surface below it.
+class DGlassRoot extends StatelessWidget {
+  const DGlassRoot({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => BackdropGroup(child: child);
+}
+
 /// A floating glass surface: the one container used by every glass panel.
 class DGlass extends StatelessWidget {
   const DGlass({
@@ -80,9 +64,11 @@ class DGlass extends StatelessWidget {
     this.tint = G.chromeTint,
     this.body = D.surface,
     this.premium = false,
+    this.panel = false,
     this.width,
     this.height,
     this.hairline = true,
+    this.shadow = true,
   });
 
   final Widget child;
@@ -91,15 +77,22 @@ class DGlass extends StatelessWidget {
   final EdgeInsetsGeometry margin;
   final double tint;
   final Color body;
+
+  /// Kept for call-site compatibility; no extra cost.
   final bool premium;
+
+  /// Large surface (drawer, sheet, dialog, page card): no live blur.
+  final bool panel;
   final double? width;
   final double? height;
   final bool hairline;
+  final bool shadow;
 
   @override
   Widget build(BuildContext context) {
     final level = GlassScopeInfo.of(context);
     final inner = GlassScopeInfo(level: GlassLevel.surface, child: Padding(padding: pad, child: child));
+    final r = BorderRadius.circular(radius);
     // Nested glass renders as a quiet raised fill instead of a second lens.
     if (level == GlassLevel.surface) {
       return Container(
@@ -108,52 +101,153 @@ class DGlass extends StatelessWidget {
         margin: margin,
         decoration: BoxDecoration(
           color: D.surfaceHi.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(radius),
+          borderRadius: r,
           border: hairline ? Border.all(color: D.borderSoft) : null,
         ),
         child: inner,
       );
     }
-    final shape = LiquidRoundedSuperellipse(
-      borderRadius: radius,
-      side: hairline ? const BorderSide(color: D.hairline, width: 0.8) : BorderSide.none,
+    final a = panel ? G.panelTint : tint;
+    Widget surface = DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: r,
+        // Lit from the top: a touch brighter at the top edge, settling into
+        // the body colour, so the surface reads as a curved pane.
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color.lerp(body, D.surfaceTop, 0.55)!.withValues(alpha: a),
+            body.withValues(alpha: a),
+          ],
+        ),
+      ),
+      child: CustomPaint(
+        foregroundPainter: hairline ? _Rim(radius) : null,
+        child: inner,
+      ),
     );
+    if (!panel) {
+      surface = ClipRRect(
+        borderRadius: r,
+        child: BackdropFilter.grouped(
+          filter: ui.ImageFilter.blur(sigmaX: G.blurSigma, sigmaY: G.blurSigma, tileMode: TileMode.mirror),
+          child: surface,
+        ),
+      );
+    }
     return Padding(
       padding: margin,
-      child: GlassContainer(
+      child: Container(
         width: width,
         height: height,
-        shape: shape,
-        useOwnLayer: level != GlassLevel.layer,
-        settings: level == GlassLevel.layer ? null : G.surface(tint: tint, body: body),
-        quality: premium ? GlassQuality.premium : GlassQuality.standard,
-        clipBehavior: Clip.antiAlias,
-        child: inner,
+        decoration: shadow
+            ? BoxDecoration(borderRadius: r, boxShadow: const [
+                BoxShadow(color: Color(0x59000000), blurRadius: 18, offset: Offset(0, 6)),
+              ])
+            : null,
+        child: surface,
       ),
     );
   }
 }
 
-/// Several glass controls that share one liquid layer, so they refract the
-/// same backdrop and blend into each other when they come close.
+/// Specular rim: a bright hairline on the lit top edge fading to a faint one
+/// at the bottom, plus a soft inner highlight band. Static paint, no shader.
+class _Rim extends CustomPainter {
+  const _Rim(this.radius);
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final rad = radius.clamp(0.0, size.shortestSide / 2);
+    final rr = RRect.fromRectAndRadius(rect.deflate(0.5), Radius.circular(rad));
+    canvas.drawRRect(
+      rr,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..shader = const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0x40FFF3EA), Color(0x0FFFF3EA), Color(0x1AFFF3EA)],
+          stops: [0, 0.55, 1],
+        ).createShader(rect),
+    );
+    final band = Rect.fromLTWH(0, 0, size.width, (size.height * 0.45).clamp(0.0, 36.0));
+    canvas.save();
+    canvas.clipRRect(rr);
+    canvas.drawRect(
+      band,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0x10FFFFFF), Color(0x00FFFFFF)],
+        ).createShader(band),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_Rim old) => old.radius != radius;
+}
+
+/// Kept for compatibility: its children simply render as regular glass.
 class DGlassGroup extends StatelessWidget {
-  const DGlassGroup({super.key, required this.child, this.tint = G.chromeTint, this.premium = true});
+  const DGlassGroup({super.key, required this.child, this.tint = G.chromeTint, this.premium = false});
   final Widget child;
   final double tint;
   final bool premium;
 
   @override
+  Widget build(BuildContext context) => child;
+}
+
+/// Glass body for a control that floats on the page by itself: tint, rim and
+/// shadow, no backdrop read of its own.
+class DGlassPill extends StatelessWidget {
+  const DGlassPill({
+    super.key,
+    required this.child,
+    this.radius = D.rPill,
+    this.body = D.surfaceHi,
+    this.tint = 0.8,
+    this.width,
+    this.height,
+  });
+  final Widget child;
+  final double radius;
+  final Color body;
+  final double tint;
+  final double? width;
+  final double? height;
+
+  @override
   Widget build(BuildContext context) {
-    if (GlassScopeInfo.of(context) == GlassLevel.surface) return child;
-    return AdaptiveLiquidGlassLayer(
-      settings: G.surface(tint: tint),
-      quality: premium ? GlassQuality.premium : GlassQuality.standard,
-      child: GlassScopeInfo(level: GlassLevel.layer, child: child),
+    final r = BorderRadius.circular(radius);
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: r,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color.lerp(body, Colors.white, 0.10)!.withValues(alpha: tint),
+            body.withValues(alpha: tint),
+          ],
+        ),
+        boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 10, offset: Offset(0, 3))],
+      ),
+      child: CustomPaint(foregroundPainter: _Rim(radius), child: child),
     );
   }
 }
 
-/// Warm ambient backdrop. Glass needs something to refract: a faint coral glow
+/// Warm ambient backdrop. Glass needs something to show: a faint coral glow
 /// near the top and a sand glow near the bottom, on the same dark base colour.
 class DAmbient extends StatelessWidget {
   const DAmbient({super.key, required this.child});
@@ -214,22 +308,35 @@ class _RenderMeasure extends RenderProxyBox {
   _RenderMeasure(this.onSize);
   ValueChanged<Size> onSize;
   Size? _last;
+  bool _scheduled = false;
 
   @override
   void performLayout() {
     super.performLayout();
-    final s = size;
-    if (s == _last) return;
-    _last = s;
-    WidgetsBinding.instance.addPostFrameCallback((_) => onSize(s));
+    if (size == _last || _scheduled) return;
+    // One callback per frame at most, carrying the latest size.
+    _scheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scheduled = false;
+      if (!attached || !hasSize || size == _last) return;
+      _last = size;
+      onSize(size);
+    });
   }
 }
 
-/// Glass entrance/exit for a surface that appears in place: the glass settles
-/// in from slightly oversized while its content sharpens (iOS 26 materialize).
-Widget glassSwitch(Widget child, Animation<double> a) => GlassMaterializeTransition(
-      animation: a,
-      scaleFrom: 1.06,
-      contentSigma: 6,
+/// Glass entrance/exit: settles in from slightly oversized while fading up,
+/// dissolves on the way out. Transforms and opacity only, so it is cheap.
+Widget dMaterialize(Animation<double> a, Widget child,
+    {Alignment alignment = Alignment.center, double scaleFrom = 1.04}) {
+  return FadeTransition(
+    opacity: a,
+    child: ScaleTransition(
+      alignment: alignment,
+      scale: Tween(begin: scaleFrom, end: 1.0).animate(a),
       child: child,
-    );
+    ),
+  );
+}
+
+Widget glassSwitch(Widget child, Animation<double> a) => dMaterialize(a, child);

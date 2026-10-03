@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -65,16 +64,7 @@ Future<void> main() async {
     systemNavigationBarColor: kBg,
     statusBarIconBrightness: Brightness.light,
   ));
-  // Pre-warm the glass shaders so the first frame has no placeholder flash.
-  await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
-  runApp(LiquidGlassWidgets.wrap(
-    // The app is always dark; never follow a light system theme.
-    brightnessResolver: (_) => Brightness.dark,
-    // Benchmarks the device and steps quality down on slow or hot hardware.
-    adaptiveQuality: true,
-    theme: G.theme(),
-    child: const HermesApp(),
-  ));
+  runApp(const HermesApp());
   Notify.i.init();
 }
 
@@ -424,8 +414,8 @@ class _LoginPageState extends State<LoginPage> {
               DGlass(
                 pad: const EdgeInsets.all(18),
                 radius: 26,
-                premium: true,
-                tint: G.panelTint,
+                                tint: G.panelTint,
+          panel: true,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   _field('عنوان الخادم', url, tb.World.new),
                   const SizedBox(height: 14),
@@ -461,6 +451,7 @@ class _LoginPageState extends State<LoginPage> {
                 DGlass(
                   pad: const EdgeInsets.symmetric(vertical: 3),
                   tint: G.panelTint,
+          panel: true,
                   child: Column(children: [
                     for (var i = 0; i < saved.length; i++) ...[
                       if (i > 0)
@@ -597,7 +588,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   bool _pullDialogOpen = false;
-  double _topH = 60, _botH = 0;
+  // Heights of the glass bars floating over the transcript. Notifiers, not
+  // state: a growing composer must only re-pad the list, never rebuild the
+  // whole screen on every animation frame.
+  final _topH = ValueNotifier<double>(60), _botH = ValueNotifier<double>(0);
 
   /// A send was refused because another device owns the session: offer to pull it here.
   Future<void> _pullOffer() async {
@@ -633,6 +627,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     gw.removeListener(_backgroundStatus);
     unawaited(backgroundConnection.stop());
     backgroundConnection.dispose();
+    _topH.dispose();
+    _botH.dispose();
     store.dispose();
     gw.dispose();
     super.dispose();
@@ -652,9 +648,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         // float over it as glass, so messages scroll visibly beneath them.
         body: DAmbient(
           child: SafeArea(
-            child: Stack(children: [
+            child: DGlassRoot(child: Stack(children: [
               Positioned.fill(
-                child: ChatView(store: store, insets: EdgeInsets.only(top: _topH, bottom: _botH)),
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _topH,
+                  builder: (context, top, _) => ValueListenableBuilder<double>(
+                    valueListenable: _botH,
+                    builder: (context, bottom, _) =>
+                        ChatView(store: store, insets: EdgeInsets.only(top: top, bottom: bottom)),
+                  ),
+                ),
               ),
               Positioned(
                 top: 0,
@@ -662,12 +665,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 right: 0,
                 child: DMeasure(
                   onSize: (sz) {
-                    if (mounted && (sz.height - _topH).abs() > 0.5) setState(() => _topH = sz.height);
+                    if ((sz.height - _topH.value).abs() > 0.5) _topH.value = sz.height;
                   },
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  child: RepaintBoundary(child: Column(mainAxisSize: MainAxisSize.min, children: [
                     TopBar(store: store, onMenu: () => scaffoldKey.currentState?.openDrawer()),
                     DReveal(show: gw.state != LinkState.connected, alignment: Alignment.topCenter, child: LinkBanner(gw: gw)),
-                  ]),
+                  ])),
                 ),
               ),
               Positioned(
@@ -676,7 +679,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 bottom: 0,
                 child: DMeasure(
                   onSize: (sz) {
-                    if (mounted && (sz.height - _botH).abs() > 0.5) setState(() => _botH = sz.height);
+                    if ((sz.height - _botH.value).abs() > 0.5) _botH.value = sz.height;
                   },
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     DReveal(
@@ -686,8 +689,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     // Opening or closing a session materializes the composer
                     // instead of popping it in.
                     AnimatedSwitcher(
-                      duration: D.tSheetIn,
-                      reverseDuration: D.tOut,
+                      duration: const Duration(milliseconds: 220),
+                      reverseDuration: const Duration(milliseconds: 140),
                       switchInCurve: D.ease,
                       switchOutCurve: D.easeIn,
                       transitionBuilder: glassSwitch,
@@ -698,7 +701,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   ]),
                 ),
               ),
-            ]),
+            ])),
           ),
         ),
       ),
@@ -752,8 +755,7 @@ class TopBar extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(8, 6, 8, 2),
       pad: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       radius: 26,
-      premium: true,
-      child: Row(children: [
+            child: Row(children: [
         _BarBtn(icon: tb.Menu2.new, tooltip: 'الجلسات', onPressed: onMenu),
         const SizedBox(width: 4),
         Expanded(
@@ -1010,8 +1012,8 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
         child: DGlass(
           margin: const EdgeInsetsDirectional.fromSTEB(8, 8, 0, 8),
           radius: 30,
-          premium: true,
-          tint: G.panelTint,
+                    tint: G.panelTint,
+          panel: true,
           pad: const EdgeInsets.fromLTRB(10, 10, 10, 6),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Padding(
@@ -1118,14 +1120,10 @@ class ChatView extends StatelessWidget {
   Widget build(BuildContext context) {
     // Loading, empty and transcript states cross-dissolve into each other.
     return AnimatedSwitcher(
-      duration: D.tSheetIn,
-      reverseDuration: D.tOut,
+      duration: const Duration(milliseconds: 200),
+      reverseDuration: const Duration(milliseconds: 120),
       switchInCurve: D.ease,
       switchOutCurve: D.easeIn,
-      transitionBuilder: (w, a) => FadeTransition(
-        opacity: a,
-        child: ScaleTransition(scale: Tween(begin: 0.985, end: 1.0).animate(a), child: w),
-      ),
       child: KeyedSubtree(
         key: ValueKey(store.opening ? 'opening' : store.sid == null ? 'none' : (store.items.isEmpty && !store.running) ? 'empty:${store.sid}' : 'chat:${store.sid}'),
         child: _body(context),
@@ -1193,7 +1191,7 @@ class ChatView extends StatelessWidget {
         final gap = older == null ? 0.0 : (step && prevStep ? 0.0 : (it.kind == 'user' ? 18.0 : 10.0));
         return EnterAnim(
           key: ObjectKey(it),
-          child: Padding(padding: EdgeInsets.only(top: gap), child: MessageTile(item: it)),
+          child: RepaintBoundary(child: Padding(padding: EdgeInsets.only(top: gap), child: MessageTile(item: it))),
         );
       },
     );
@@ -1446,6 +1444,7 @@ class _RequestCardState extends State<RequestCard> {
       pad: const EdgeInsets.all(12),
       radius: D.rLg,
       tint: G.panelTint,
+          panel: true,
       body: const Color(0xFF2A1E1A), // warm accent-tinted panel: needs attention
       child: ConstrainedBox(
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
@@ -1732,6 +1731,7 @@ class _ComposerState extends State<Composer> {
           margin: const EdgeInsets.symmetric(horizontal: 12),
           radius: D.rLg,
           tint: G.panelTint,
+          panel: true,
           child: ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.42),
             child: ListView.builder(
@@ -1785,8 +1785,7 @@ class _ComposerState extends State<Composer> {
         margin: const EdgeInsets.fromLTRB(10, 6, 10, 10),
         pad: const EdgeInsets.fromLTRB(10, 8, 10, 8),
         radius: 28,
-        premium: true,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
           DReveal(
             show: store.attachments.isNotEmpty,
             alignment: Alignment.topCenter,
@@ -1968,9 +1967,9 @@ Future<void> showModelSheet(BuildContext context, HermesStore store) {
     backgroundColor: Colors.transparent,
     barrierColor: Colors.black.withValues(alpha: 0.42),
     sheetAnimationStyle: const AnimationStyle(
-      duration: Duration(milliseconds: 460),
-      reverseDuration: D.tSheetOut,
-      curve: Cubic(0.2, 1.2, 0.3, 1), // rises with a soft liquid overshoot
+      duration: Duration(milliseconds: 300),
+      reverseDuration: Duration(milliseconds: 180),
+      curve: Cubic(0.2, 1.1, 0.3, 1), // rises with a soft liquid overshoot
       reverseCurve: D.easeIn,
     ),
     builder: (c) => ModelSheet(store: store),
@@ -1982,16 +1981,12 @@ Future<T?> showDDialog<T>(BuildContext context, WidgetBuilder builder) => showGe
       barrierDismissible: true,
       barrierLabel: 'close',
       barrierColor: Colors.black.withValues(alpha: 0.42),
-      transitionDuration: const Duration(milliseconds: 380),
+      transitionDuration: const Duration(milliseconds: 220),
       pageBuilder: (c, _, _) => builder(c),
       // The dialog materializes like iOS 26 glass: it settles in from slightly
-      // oversized while its content comes into focus, and dissolves on exit.
-      transitionBuilder: (c, a, _, child) => GlassMaterializeTransition(
-        animation: CurvedAnimation(parent: a, curve: D.ease, reverseCurve: D.easeIn),
-        scaleFrom: 1.1,
-        contentSigma: 8,
-        child: child,
-      ),
+      // oversized and dissolves on exit.
+      transitionBuilder: (c, a, _, child) =>
+          dMaterialize(CurvedAnimation(parent: a, curve: D.ease, reverseCurve: D.easeIn), child, scaleFrom: 1.06),
     );
 
 class ModelSheet extends StatefulWidget {
@@ -2011,16 +2006,17 @@ class _ModelSheetState extends State<ModelSheet> {
           ic(icon, size: 17, color: value ? D.accent : D.muted),
           const SizedBox(width: 12),
           Expanded(child: Text(label, style: txt(14))),
-          GlassSwitch(
+          Switch(
             value: value,
             onChanged: (v) {
               H.fire(Hx.select);
               onChanged(v);
             },
-            useOwnLayer: true,
-            activeColor: D.accent,
-            inactiveColor: D.surfaceTop,
-            semanticLabel: label,
+            activeThumbColor: Colors.white,
+            activeTrackColor: D.accent,
+            inactiveThumbColor: D.muted,
+            inactiveTrackColor: D.surfaceTop,
+            trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
           ),
         ]),
       );
@@ -2162,8 +2158,8 @@ class _ModelSheetState extends State<ModelSheet> {
             height: h * 0.86,
             margin: const EdgeInsets.fromLTRB(6, 0, 6, 6),
             radius: 34,
-            premium: true,
-            tint: G.panelTint,
+                        tint: G.panelTint,
+          panel: true,
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Center(
                 child: Container(
@@ -2567,9 +2563,9 @@ class DPageTransitions extends PageTransitionsBuilder {
   const DPageTransitions();
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 420);
+  Duration get transitionDuration => const Duration(milliseconds: 280);
   @override
-  Duration get reverseTransitionDuration => const Duration(milliseconds: 260);
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 200);
 
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context, Animation<double> animation,
@@ -2578,16 +2574,13 @@ class DPageTransitions extends PageTransitionsBuilder {
     // Incoming page: slides from the end edge with a slight liquid overshoot.
     final a = CurvedAnimation(parent: animation, curve: const Cubic(0.2, 1.08, 0.3, 1), reverseCurve: D.easeIn);
     final b = CurvedAnimation(parent: secondaryAnimation, curve: D.ease, reverseCurve: D.easeIn);
-    // Outgoing page recedes into depth (smaller, dimmer), like a glass layer
-    // stepping back under the new one.
-    return ScaleTransition(
-      scale: Tween(begin: 1.0, end: 0.94).animate(b),
-      child: FadeTransition(
-        opacity: Tween(begin: 1.0, end: 0.5).animate(b),
-        child: SlideTransition(
-          position: Tween(begin: Offset(rtl ? -0.22 : 0.22, 0), end: Offset.zero).animate(a),
-          child: FadeTransition(opacity: CurvedAnimation(parent: animation, curve: const Interval(0, 0.6)), child: child),
-        ),
+    // Outgoing page drifts back slightly; transforms only (no scale or fade
+    // of a glass-heavy page, which forces its layers to re-render per frame).
+    return SlideTransition(
+      position: Tween(begin: Offset.zero, end: Offset(rtl ? 0.08 : -0.08, 0)).animate(b),
+      child: SlideTransition(
+        position: Tween(begin: Offset(rtl ? -1.0 : 1.0, 0), end: Offset.zero).animate(a),
+        child: child,
       ),
     );
   }
@@ -2603,8 +2596,7 @@ class _PageBar extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(8, 6, 8, 6),
         pad: const EdgeInsets.fromLTRB(4, 4, 12, 4),
         radius: 26,
-        premium: true,
-        child: Row(children: [
+                child: Row(children: [
           DIconBtn(
             icon: tb.ArrowRight.new,
             size: 40,
@@ -2816,6 +2808,7 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
                     const DSection('البوابات المحفوظة'),
                     DGlass(
                       tint: G.panelTint,
+          panel: true,
                       pad: const EdgeInsets.symmetric(vertical: 3),
                       child: Column(children: [
                         for (var i = 0; i < conns.length; i++) ...[
@@ -3009,8 +3002,8 @@ class _ConnectionEditorPageState extends State<ConnectionEditorPage> {
               DGlass(
                 pad: const EdgeInsets.all(16),
                 radius: 24,
-                premium: true,
-                tint: G.panelTint,
+                                tint: G.panelTint,
+          panel: true,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   _efield('الاسم', name, tb.Tag.new, hint: 'اختياري'),
                   const SizedBox(height: 14),
