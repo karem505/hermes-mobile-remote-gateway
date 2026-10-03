@@ -8,6 +8,9 @@ val releaseStore = System.getenv("HERMES_ANDROID_KEYSTORE")
 val releaseStorePassword = System.getenv("HERMES_ANDROID_STORE_PASSWORD")
 val releaseKeyPassword = System.getenv("HERMES_ANDROID_KEY_PASSWORD")
 val releaseKeyAlias = System.getenv("HERMES_ANDROID_KEY_ALIAS") ?: "hermes-mobile"
+// Optional side-by-side variant for experiments (e.g. HERMES_APP_VARIANT=glass):
+// installs next to the regular app with its own id, label and data.
+val appVariant = System.getenv("HERMES_APP_VARIANT")?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "ai.ailigent.hermes_mobile"
@@ -33,6 +36,10 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appLabel"] = if (appVariant != null) "Hermes ${appVariant.replaceFirstChar { it.uppercase() }}" else "Hermes"
+        if (appVariant != null) {
+            applicationIdSuffix = ".$appVariant"
+        }
     }
 
     signingConfigs {

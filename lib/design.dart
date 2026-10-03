@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:tabler_icons_next/tabler_icons_next.dart' as tb;
 
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
 import 'background.dart';
+import 'glass.dart';
 
 /// Design tokens: a warm, Claude-Code-flavoured dark surface with soft depth.
 class D {
@@ -119,6 +122,41 @@ Widget ic(IconCtor f, {double size = 18, Color color = D.muted, double? w}) =>
 TextStyle txt(double size, {Color color = D.fg, FontWeight weight = FontWeight.w400, double height = 1.5}) =>
     TextStyle(color: color, fontSize: size, fontWeight: weight, height: height);
 
+/// Flat control with liquid press physics: the jelly stretch, touch glow and
+/// spring of a glass button, without a second lens. Used for every control
+/// that already sits on a glass surface (glass inside glass is avoided).
+Widget dGlassTap({
+  required Widget child,
+  required VoidCallback? onTap,
+  required ShapeBorder clip,
+  LiquidShape shape = const LiquidOval(),
+  Hx haptic = Hx.light,
+  String label = '',
+  double? width,
+  double? height,
+  double press = 0.95,
+}) {
+  return GlassButton.custom(
+    onTap: onTap == null
+        ? () {}
+        : () {
+            H.fire(haptic);
+            onTap();
+          },
+    enabled: onTap != null,
+    style: GlassButtonStyle.transparent,
+    shape: shape,
+    width: width,
+    height: height,
+    label: label,
+    interactionScale: press,
+    stretch: 0.35,
+    child: label.isEmpty ? child : ExcludeSemantics(child: child),
+  );
+}
+
+LiquidShape _pill(double h) => LiquidRoundedSuperellipse(borderRadius: h / 2);
+
 /// Rounded elevated surface: the one container used by every card-like surface.
 class DCard extends StatelessWidget {
   const DCard({
@@ -181,6 +219,7 @@ class DBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
+    final level = GlassScopeInfo.of(context);
     final fg = !enabled
         ? D.faint
         : switch (kind) {
@@ -189,45 +228,70 @@ class DBtn extends StatelessWidget {
             DBtnKind.ghost => D.muted,
             DBtnKind.danger => D.onAccent,
           };
-    return DPress(
-      onTap: onPressed,
-      scale: 0.96,
-      haptic: haptic ?? (kind == DBtnKind.fill ? Hx.medium : Hx.light),
-      child: AnimatedContainer(
-      duration: D.tIn,
-      curve: D.ease,
-      decoration: BoxDecoration(
-        color: switch (kind) {
-          DBtnKind.fill => enabled ? D.accent : D.surfaceHi,
-          DBtnKind.outline => D.surfaceHi,
-          DBtnKind.ghost => Colors.transparent,
-          DBtnKind.danger => enabled ? D.danger : D.surfaceHi,
-        },
-        borderRadius: BorderRadius.circular(D.rPill),
-      ),
-      child: Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(D.rPill),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(D.rPill),
-        onTap: onPressed,
-        child: Container(
-          constraints: BoxConstraints(minHeight: dense ? 32 : 44),
-          padding: EdgeInsets.symmetric(horizontal: dense ? 12 : 18, vertical: dense ? 6 : 10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(D.rPill),
-            border: kind == DBtnKind.outline ? Border.all(color: D.borderSoft) : null,
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-            if (icon != null) ic(icon!, size: dense ? 14 : 16, color: fg),
-            if (icon != null) const SizedBox(width: 6),
-            Flexible(child: Text(label, textAlign: TextAlign.center, style: txt(dense ? 12.5 : 14, color: fg, weight: FontWeight.w600))),
-          ]),
-        ),
-      ),
-      ),
-      ),
+    final h = dense ? 32.0 : 44.0;
+    final hx = haptic ?? (kind == DBtnKind.fill ? Hx.medium : Hx.light);
+    final content = Container(
+      constraints: BoxConstraints(minHeight: h),
+      padding: EdgeInsets.symmetric(horizontal: dense ? 12 : 18, vertical: dense ? 6 : 10),
+      child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+        if (icon != null) ic(icon!, size: dense ? 14 : 16, color: fg),
+        if (icon != null) const SizedBox(width: 6),
+        Flexible(child: Text(label, textAlign: TextAlign.center, style: txt(dense ? 12.5 : 14, color: fg, weight: FontWeight.w600))),
+      ]),
     );
+    return LayoutBuilder(builder: (context, box) {
+      final w = box.hasTightWidth ? box.maxWidth : null;
+      // On the page: the button is its own drop of glass (coral for the
+      // primary action, warm smoke for the rest).
+      if (level == GlassLevel.none && kind != DBtnKind.ghost) {
+        return GlassButton.custom(
+          onTap: enabled
+              ? () {
+                  H.fire(hx);
+                  onPressed!();
+                }
+              : () {},
+          enabled: enabled,
+          useOwnLayer: true,
+          width: w,
+          shape: _pill(h),
+          label: label,
+          settings: !enabled
+              ? G.control()
+              : switch (kind) {
+                  DBtnKind.fill => G.accent(),
+                  DBtnKind.danger => G.accent(body: D.danger),
+                  _ => G.control(),
+                },
+          child: ExcludeSemantics(child: content),
+        );
+      }
+      // On a glass surface: a solid fill with liquid press physics.
+      return dGlassTap(
+        onTap: onPressed,
+        haptic: hx,
+        width: w,
+        label: label,
+        shape: _pill(h),
+        clip: const StadiumBorder(),
+        child: AnimatedContainer(
+          duration: D.tIn,
+          curve: D.ease,
+          width: w,
+          decoration: BoxDecoration(
+            color: switch (kind) {
+              DBtnKind.fill => enabled ? D.accent : D.surfaceHi,
+              DBtnKind.outline => D.surfaceHi.withValues(alpha: 0.7),
+              DBtnKind.ghost => Colors.transparent,
+              DBtnKind.danger => enabled ? D.danger : D.surfaceHi,
+            },
+            borderRadius: BorderRadius.circular(D.rPill),
+            border: kind == DBtnKind.outline ? Border.all(color: D.hairline) : null,
+          ),
+          child: content,
+        ),
+      );
+    });
   }
 }
 
@@ -258,37 +322,64 @@ class DIconBtn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = primary ? (active ? D.danger : D.accent) : (active ? D.accentWash : D.surfaceHi);
+    final level = GlassScopeInfo.of(context);
+    final enabled = onPressed != null;
     final fg = primary ? D.onAccent : (active ? D.accent : (tint ?? D.fg));
-    final b = DPress(
-      onTap: onPressed,
-      scale: 0.88,
-      haptic: haptic ?? (primary ? Hx.medium : Hx.light),
-      child: AnimatedContainer(
-        duration: D.tIn,
-        curve: D.ease,
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: onPressed == null ? D.surfaceHi.withValues(alpha: 0.5) : bg,
-          shape: BoxShape.circle,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onPressed,
-            child: Center(
-              child: DSwap(
-                id: '${icon.hashCode}-${onPressed == null}',
-                child: ic(icon, size: size * 0.45, color: onPressed == null ? D.faint : fg),
-              ),
-            ),
-          ),
-        ),
+    final hx = haptic ?? (primary ? Hx.medium : Hx.light);
+    final glyph = Center(
+      child: DSwap(
+        id: '${icon.hashCode}-$enabled',
+        child: ic(icon, size: size * 0.45, color: enabled ? fg : D.faint),
       ),
     );
+    final label = tooltip ?? '';
+    Widget b;
+    if (level == GlassLevel.surface || (level == GlassLevel.layer && primary)) {
+      // On a glass surface: solid disc, liquid physics.
+      final bg = primary
+          ? (active ? D.danger : D.accent)
+          : (active ? D.accentWash : D.surfaceHi.withValues(alpha: 0.72));
+      b = dGlassTap(
+        onTap: onPressed,
+        haptic: hx,
+        width: size,
+        height: size,
+        label: label,
+        clip: const CircleBorder(),
+        child: AnimatedContainer(
+          duration: D.tIn,
+          curve: D.ease,
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: enabled ? bg : D.surfaceHi.withValues(alpha: 0.4),
+            shape: BoxShape.circle,
+          ),
+          child: glyph,
+        ),
+      );
+    } else {
+      // On the page (own drop) or in a shared layer (blends with siblings).
+      b = GlassButton.custom(
+        onTap: enabled
+            ? () {
+                H.fire(hx);
+                onPressed!();
+              }
+            : () {},
+        enabled: enabled,
+        width: size,
+        height: size,
+        label: label,
+        useOwnLayer: level == GlassLevel.none,
+        settings: level == GlassLevel.none
+            ? (primary
+                ? G.accent(body: active ? D.danger : D.accent)
+                : G.control(body: active ? D.accentWash : D.surfaceHi))
+            : null,
+        child: glyph,
+      );
+    }
     return tooltip == null ? b : Tooltip(message: tooltip!, child: b);
   }
 }
@@ -314,46 +405,39 @@ class DChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DPress(
+    return dGlassTap(
       onTap: onTap,
-      scale: 0.95,
       haptic: Hx.select,
-      child: Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(D.rPill),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(D.rPill),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: D.tIn,
-          curve: D.ease,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: active ? D.accentWash : D.surfaceHi,
-            borderRadius: BorderRadius.circular(D.rPill),
-            border: Border.all(color: active ? D.accentDim.withValues(alpha: 0.6) : D.borderSoft),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (icon != null) ic(icon!, size: 14, color: active ? D.accent : D.muted),
-        if (icon != null) const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 132),
-              child: AnimatedSize(
-                duration: D.tIn,
-                curve: D.ease,
-                alignment: AlignmentDirectional.centerStart,
-                child: DTextSwap(
-                  label,
-                  textDirection: ltr ? TextDirection.ltr : TextDirection.rtl,
-                  style: txt(12.5, color: D.fg, weight: FontWeight.w600),
-                ),
+      shape: _pill(32),
+      clip: const StadiumBorder(),
+      child: AnimatedContainer(
+        duration: D.tIn,
+        curve: D.ease,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? D.accentWash : D.surfaceHi.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(D.rPill),
+          border: Border.all(color: active ? D.accentDim.withValues(alpha: 0.6) : D.hairline),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (icon != null) ic(icon!, size: 14, color: active ? D.accent : D.muted),
+          if (icon != null) const SizedBox(width: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 132),
+            child: AnimatedSize(
+              duration: D.tIn,
+              curve: D.ease,
+              alignment: AlignmentDirectional.centerStart,
+              child: DTextSwap(
+                label,
+                textDirection: ltr ? TextDirection.ltr : TextDirection.rtl,
+                style: txt(12.5, color: D.fg, weight: FontWeight.w600),
               ),
             ),
-            if (trailing != null) const SizedBox(width: 4),
-            if (trailing != null) ic(trailing!, size: 13, color: D.muted),
-          ]),
-        ),
-      ),
+          ),
+          if (trailing != null) const SizedBox(width: 4),
+          if (trailing != null) ic(trailing!, size: 13, color: D.muted),
+        ]),
       ),
     );
   }
@@ -377,9 +461,9 @@ class DInput extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 44),
       alignment: AlignmentDirectional.centerStart,
       decoration: BoxDecoration(
-        color: D.surfaceHi,
+        color: D.bg.withValues(alpha: 0.42),
         borderRadius: BorderRadius.circular(D.rMd),
-        border: Border.all(color: D.borderSoft),
+        border: Border.all(color: D.hairline),
       ),
       child: child,
     );
@@ -440,11 +524,11 @@ class DDialog extends StatelessWidget {
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-          decoration: BoxDecoration(color: D.surface,
-            borderRadius: BorderRadius.circular(26), boxShadow: D.lift,
-            border: Border.all(color: D.borderSoft)),
+        child: DGlass(
+          radius: 28,
+          premium: true,
+          tint: G.panelTint,
+          pad: const EdgeInsets.fromLTRB(20, 18, 20, 20),
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
               Container(
@@ -458,9 +542,8 @@ class DDialog extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(child: Semantics(namesRoute: true, header: true,
                 child: Text(title, style: txt(17, weight: FontWeight.w700, height: 1.35)))),
-              IconButton(tooltip: 'إغلاق', visualDensity: VisualDensity.compact,
-                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                icon: ic(tb.X.new, size: 18), onPressed: () => Navigator.of(context).maybePop()),
+              DIconBtn(icon: tb.X.new, size: 36, tooltip: 'إغلاق',
+                onPressed: () => Navigator.of(context).maybePop()),
             ]),
             const SizedBox(height: 14),
             Flexible(child: SingleChildScrollView(
@@ -483,28 +566,31 @@ class DDialog extends StatelessWidget {
 
 /// Non-blocking feedback, used by copy, uploads, configuration and errors.
 class DFeedback {
+  static VoidCallback? _dismiss;
+
   static void show(BuildContext context, String message, {DNoticeKind? kind}) {
     final tone = kind ?? (message.startsWith('تعذر') || message.startsWith('فشل')
         ? DNoticeKind.error : message.startsWith('تم ') ? DNoticeKind.success : DNoticeKind.info);
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(
-      behavior: SnackBarBehavior.floating,
-      backgroundColor: D.surfaceTop,
-      elevation: 6,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: D.borderSoft)),
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      duration: Duration(seconds: tone == DNoticeKind.error ? 7 : 3),
-      showCloseIcon: tone == DNoticeKind.error, closeIconColor: D.muted,
-      content: Semantics(liveRegion: true, child: Row(children: [
-        ic(_noticeIcon(tone), size: 18, color: _noticeColor(tone)),
-        const SizedBox(width: 10),
-        Expanded(child: Text(message, maxLines: 4, overflow: TextOverflow.ellipsis,
-          style: txt(13, height: 1.5))),
-      ])),
-    ));
+    _dismiss?.call();
+    _dismiss = null;
+    // A floating glass toast at the top, clear of the composer and keyboard.
+    try {
+      _dismiss = GlassToast.show(
+        context,
+        message: message,
+        icon: ic(_noticeIcon(tone), size: 18, color: _noticeColor(tone)),
+        type: switch (tone) {
+          DNoticeKind.error => GlassToastType.error,
+          DNoticeKind.success => GlassToastType.success,
+          _ => GlassToastType.info,
+        },
+        position: GlassToastPosition.top,
+        duration: Duration(seconds: tone == DNoticeKind.error ? 7 : 3),
+        settings: G.surface(tint: G.panelTint, body: D.surfaceTop),
+      );
+    } catch (_) {
+      // No overlay (e.g. called during teardown): nothing to show.
+    }
   }
 }
 
@@ -530,15 +616,17 @@ class DReveal extends StatelessWidget {
         reverseDuration: D.tOut,
         switchInCurve: D.ease,
         switchOutCurve: D.easeIn,
-        transitionBuilder: (w, a) => FadeTransition(
-          opacity: a,
-          child: SlideTransition(
-            position: Tween(begin: const Offset(0, 0.06), end: Offset.zero).animate(a),
-            child: ScaleTransition(
-              scale: Tween(begin: 0.97, end: 1.0).animate(a),
-              alignment: alignment,
-              child: w,
-            ),
+        // Glass cannot be faded (its backdrop pass renders fully or not at
+        // all), so surfaces materialize: they settle in from slightly
+        // oversized while the content sharpens, and dissolve on the way out.
+        transitionBuilder: (w, a) => SlideTransition(
+          position: Tween(begin: const Offset(0, 0.05), end: Offset.zero).animate(a),
+          child: GlassMaterializeTransition(
+            animation: a,
+            alignment: alignment,
+            scaleFrom: 1.05,
+            contentSigma: 6,
+            child: w,
           ),
         ),
         child: show ? KeyedSubtree(key: const ValueKey('on'), child: child) : const SizedBox(key: ValueKey('off'), width: double.infinity),
@@ -761,65 +849,25 @@ class DSegmented extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final idx = options.indexOf(value);
+    final none = idx < 0; // server default: no level highlighted
     return Directionality(
       textDirection: TextDirection.ltr,
-      child: Container(
+      child: GlassSegmentedControl(
+        segments: [for (final l in labels) GlassSegment(label: l)],
+        selectedIndex: none ? 0 : idx,
+        onSegmentSelected: (i) {
+          H.fire(Hx.select);
+          onChanged(options[i]);
+        },
         height: 42,
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: D.bg,
-          borderRadius: BorderRadius.circular(D.rPill),
-          border: Border.all(color: D.borderSoft),
-        ),
-        child: LayoutBuilder(builder: (context, c) {
-          final w = c.maxWidth / options.length;
-          return Stack(children: [
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 420),
-              curve: D.spring,
-              left: (idx < 0 ? 0 : idx) * w,
-              top: 0,
-              bottom: 0,
-              width: w,
-              child: AnimatedOpacity(
-                opacity: idx < 0 ? 0 : 1,
-                duration: D.tIn,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: D.surfaceTop,
-                    borderRadius: BorderRadius.circular(D.rPill),
-                    border: Border.all(color: D.hairline),
-                    boxShadow: D.soft,
-                  ),
-                ),
-              ),
-            ),
-            Row(children: [
-              for (var i = 0; i < options.length; i++)
-                Expanded(
-                  child: DPress(
-                    onTap: () => onChanged(options[i]),
-                    scale: 0.92,
-                    haptic: Hx.select,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => onChanged(options[i]),
-                      child: Center(
-                        child: AnimatedDefaultTextStyle(
-                          duration: D.tIn,
-                          curve: D.ease,
-                          style: txt(12.5,
-                              color: i == idx ? D.fg : D.muted,
-                              weight: i == idx ? FontWeight.w700 : FontWeight.w500),
-                          child: Text(labels[i], maxLines: 1),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ]),
-          ]);
-        }),
+        useOwnLayer: true,
+        backgroundColor: D.bg.withValues(alpha: 0.55),
+        indicatorColor: none ? Colors.transparent : D.surfaceTop.withValues(alpha: 0.9),
+        settings: G.control(body: D.bg, tint: 0.5),
+        glowColor: D.accent.withValues(alpha: 0.25),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        selectedTextStyle: txt(12.5, color: none ? D.muted : D.fg, weight: none ? FontWeight.w500 : FontWeight.w700),
+        unselectedTextStyle: txt(12.5, color: D.muted, weight: FontWeight.w500),
       ),
     );
   }
@@ -983,17 +1031,13 @@ class DActionRow extends StatelessWidget {
         for (final (icon, label, onTap) in actions)
           Tooltip(
             message: label,
-            child: Material(
-              color: Colors.transparent,
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: () {
-                  H.fire(Hx.light);
-                  onTap();
-                },
-                child: SizedBox(width: 40, height: 40, child: Center(child: ic(icon, size: 16, color: D.faint))),
-              ),
+            child: dGlassTap(
+              onTap: onTap,
+              label: label,
+              width: 40,
+              height: 40,
+              clip: const CircleBorder(),
+              child: SizedBox(width: 40, height: 40, child: Center(child: ic(icon, size: 16, color: D.faint))),
             ),
           ),
       ]),
@@ -1021,25 +1065,18 @@ class DModelChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = model.isEmpty ? 'Model' : dModelShort(model);
-    return DPress(
-      scale: 0.96,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(D.rPill),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(D.rPill),
-          onTap: onTap == null
-              ? null
-              : () {
-                  H.fire(Hx.select);
-                  onTap!();
-                },
-          child: Container(
+    return dGlassTap(
+      onTap: onTap,
+      haptic: Hx.select,
+      shape: _pill(40),
+      clip: const StadiumBorder(),
+      child: Container(
             constraints: const BoxConstraints(minHeight: 40),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             decoration: BoxDecoration(
-              color: D.surfaceHi,
+              color: D.surfaceHi.withValues(alpha: 0.72),
               borderRadius: BorderRadius.circular(D.rPill),
+              border: Border.all(color: D.hairline),
             ),
             child: Directionality(
               textDirection: TextDirection.ltr,
@@ -1098,8 +1135,6 @@ class DModelChip extends StatelessWidget {
               }),
             ),
           ),
-        ),
-      ),
     );
   }
 }
@@ -1113,30 +1148,26 @@ class DSuggestion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DPress(
-      scale: 0.97,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(D.rMd),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(D.rMd),
-          onTap: () {
-            H.fire(Hx.select);
-            onTap();
-          },
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 44),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(D.rMd),
-              border: Border.all(color: D.border),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              ic(icon, size: 16),
-              const SizedBox(width: 10),
-              Flexible(child: Text(label, style: txt(13.5, height: 1.35))),
-            ]),
-          ),
+    // Floats on the empty page: each suggestion is its own drop of glass.
+    return GlassButton.custom(
+      onTap: () {
+        H.fire(Hx.select);
+        onTap();
+      },
+      useOwnLayer: true,
+      label: label,
+      shape: const LiquidRoundedSuperellipse(borderRadius: D.rLg),
+      settings: G.control(tint: 0.5),
+      alignment: AlignmentDirectional.centerStart.resolve(Directionality.of(context)),
+      child: ExcludeSemantics(
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 46),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            ic(icon, size: 16, color: D.accent),
+            const SizedBox(width: 10),
+            Flexible(child: Text(label, style: txt(13.5, height: 1.35))),
+          ]),
         ),
       ),
     );
@@ -1168,16 +1199,15 @@ class _BackgroundStripState extends State<BackgroundStrip> {
     final items = widget.items;
     if (items.isEmpty) return const SizedBox.shrink();
     final live = items.where((i) => i.running).length;
-    return DCard(
+    return DGlass(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-      pad: EdgeInsets.zero,
-      radius: D.rMd,
-      border: D.borderSoft,
-      shadow: D.soft,
+      radius: D.rLg,
+      tint: G.cardTint,
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         DPress(
           scale: 0.985,
           child: InkWell(
+            borderRadius: BorderRadius.circular(D.rLg),
             onTap: () => setState(() => open = !open),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 9, 8, 9),

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
@@ -16,6 +17,7 @@ import 'package:tabler_icons_next/tabler_icons_next.dart' as tb;
 import 'api.dart';
 import 'connections.dart';
 import 'design.dart';
+import 'glass.dart';
 import 'notify.dart';
 import 'background_connection.dart';
 import 'store.dart';
@@ -56,14 +58,23 @@ Future<bool> biometricCheck() async {
 
 typedef IconCtor = Widget Function({Color? color, double? width, double? height});
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: kBg,
     systemNavigationBarColor: kBg,
     statusBarIconBrightness: Brightness.light,
   ));
-  runApp(const HermesApp());
+  // Pre-warm the glass shaders so the first frame has no placeholder flash.
+  await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
+  runApp(LiquidGlassWidgets.wrap(
+    // The app is always dark; never follow a light system theme.
+    brightnessResolver: (_) => Brightness.dark,
+    // Benchmarks the device and steps quality down on slow or hot hardware.
+    adaptiveQuality: true,
+    theme: G.theme(),
+    child: const HermesApp(),
+  ));
   Notify.i.init();
 }
 
@@ -215,19 +226,15 @@ class _BootState extends State<Boot> {
     if (api == null) return LoginPage(onDone: _afterFirstLogin);
     if (locked) {
       return Scaffold(
-        body: Center(
+        body: DAmbient(child: Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             ic(tb.Fingerprint.new, size: 56, color: kFg),
             const SizedBox(height: 16),
             const Text('Hermes مقفل', style: TextStyle(color: kFg, fontSize: 18, fontWeight: FontWeight.w600)),
             const SizedBox(height: 20),
-            ShadButton(
-              onPressed: _unlock,
-              leading: ic(tb.Fingerprint.new, size: 16, color: Colors.white),
-              child: const Text('فتح بالبصمة', style: TextStyle(color: Colors.white)),
-            ),
+            DBtn(label: 'فتح بالبصمة', icon: tb.Fingerprint.new, onPressed: _unlock),
           ]),
-        ),
+        )),
       );
     }
     return HomePage(
@@ -395,7 +402,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
+      body: DAmbient(child: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(22),
@@ -414,9 +421,11 @@ class _LoginPageState extends State<LoginPage> {
               const SizedBox(height: 4),
               Text('المساعد الشخصي على أجهزتك', style: txt(13, color: D.muted)),
               const SizedBox(height: 22),
-              DCard(
+              DGlass(
                 pad: const EdgeInsets.all(18),
-                shadow: D.lift,
+                radius: 26,
+                premium: true,
+                tint: G.panelTint,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   _field('عنوان الخادم', url, tb.World.new),
                   const SizedBox(height: 14),
@@ -449,8 +458,9 @@ class _LoginPageState extends State<LoginPage> {
               ),
               if (saved.isNotEmpty) ...[
                 const SizedBox(height: 14),
-                DCard(
+                DGlass(
                   pad: const EdgeInsets.symmetric(vertical: 3),
+                  tint: G.panelTint,
                   child: Column(children: [
                     for (var i = 0; i < saved.length; i++) ...[
                       if (i > 0)
@@ -476,7 +486,7 @@ class _LoginPageState extends State<LoginPage> {
             ]),
           ),
         ),
-      ),
+      )),
     );
   }
 }
@@ -587,6 +597,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   bool _pullDialogOpen = false;
+  double _topH = 60, _botH = 0;
 
   /// A send was refused because another device owns the session: offer to pull it here.
   Future<void> _pullOffer() async {
@@ -636,18 +647,58 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         backgroundColor: kBg,
         drawer: SessionsDrawer(store: store, onLogout: widget.onLogout, onBackground: _backgroundSettings, onConnections: widget.onConnections),
         drawerEdgeDragWidth: 60,
-        body: SafeArea(
-          child: Column(
-            children: [
-              TopBar(store: store, onMenu: () => scaffoldKey.currentState?.openDrawer()),
-              DReveal(show: gw.state != LinkState.connected, alignment: Alignment.topCenter, child: LinkBanner(gw: gw)),
-              Expanded(child: ChatView(store: store)),
-              DReveal(
-                show: store.pending != null,
-                child: store.pending == null ? const SizedBox.shrink() : RequestCard(store: store),
+        drawerScrimColor: Colors.black.withValues(alpha: 0.38),
+        // The transcript runs the full height; the top bar and the composer
+        // float over it as glass, so messages scroll visibly beneath them.
+        body: DAmbient(
+          child: SafeArea(
+            child: Stack(children: [
+              Positioned.fill(
+                child: ChatView(store: store, insets: EdgeInsets.only(top: _topH, bottom: _botH)),
               ),
-              if (store.sid != null) Composer(store: store, api: widget.api),
-            ],
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: DMeasure(
+                  onSize: (sz) {
+                    if (mounted && (sz.height - _topH).abs() > 0.5) setState(() => _topH = sz.height);
+                  },
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    TopBar(store: store, onMenu: () => scaffoldKey.currentState?.openDrawer()),
+                    DReveal(show: gw.state != LinkState.connected, alignment: Alignment.topCenter, child: LinkBanner(gw: gw)),
+                  ]),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: DMeasure(
+                  onSize: (sz) {
+                    if (mounted && (sz.height - _botH).abs() > 0.5) setState(() => _botH = sz.height);
+                  },
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    DReveal(
+                      show: store.pending != null,
+                      child: store.pending == null ? const SizedBox.shrink() : RequestCard(store: store),
+                    ),
+                    // Opening or closing a session materializes the composer
+                    // instead of popping it in.
+                    AnimatedSwitcher(
+                      duration: D.tSheetIn,
+                      reverseDuration: D.tOut,
+                      switchInCurve: D.ease,
+                      switchOutCurve: D.easeIn,
+                      transitionBuilder: glassSwitch,
+                      child: store.sid != null
+                          ? KeyedSubtree(key: const ValueKey('composer'), child: Composer(store: store, api: widget.api))
+                          : const SizedBox(key: ValueKey('none'), width: double.infinity),
+                    ),
+                  ]),
+                ),
+              ),
+            ]),
           ),
         ),
       ),
@@ -661,15 +712,14 @@ class LinkBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final connecting = gw.state == LinkState.connecting;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      padding: const EdgeInsetsDirectional.fromSTEB(12, 6, 6, 6),
-      constraints: const BoxConstraints(minHeight: 44),
-      decoration: BoxDecoration(
-        color: connecting ? D.surfaceHi : D.danger.withValues(alpha: 0.10),
-        border: Border.all(color: connecting ? D.borderSoft : D.danger.withValues(alpha: 0.28)),
-        borderRadius: BorderRadius.circular(D.rMd),
-      ),
+    return DGlass(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      pad: const EdgeInsetsDirectional.fromSTEB(12, 6, 6, 6),
+      radius: D.rLg,
+      tint: G.cardTint,
+      body: connecting ? D.surface : const Color(0xFF3A1F1B),
+      child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 32),
       child: Row(children: [
         ic(connecting ? tb.Loader2.new : tb.WifiOff.new, size: 16, color: connecting ? D.muted : D.danger),
         const SizedBox(width: 8),
@@ -683,6 +733,7 @@ class LinkBanner extends StatelessWidget {
         ),
         if (!connecting) DBtn(label: 'إعادة', kind: DBtnKind.ghost, dense: true, onPressed: gw.retryNow),
       ]),
+      ),
     );
   }
 }
@@ -697,18 +748,18 @@ class TopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = store.sid == null ? 'Hermes' : (store.title.isEmpty ? 'جلسة جديدة' : store.title);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+    return DGlass(
+      margin: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+      pad: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      radius: 26,
+      premium: true,
       child: Row(children: [
         _BarBtn(icon: tb.Menu2.new, tooltip: 'الجلسات', onPressed: onMenu),
         const SizedBox(width: 4),
         Expanded(
-          child: Text(
+          child: DTextSwap(
             title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             textDirection: _dirOf(title),
-            textAlign: TextAlign.start,
             style: txt(15.5, weight: FontWeight.w600, height: 1.3),
           ),
         ),
@@ -745,17 +796,13 @@ class _BarBtn extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Tooltip(
         message: tooltip,
-        child: Material(
-          color: Colors.transparent,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () {
-              H.fire(Hx.light);
-              onPressed();
-            },
-            child: SizedBox(width: 44, height: 44, child: Center(child: ic(icon, size: 20, color: D.fg))),
-          ),
+        child: dGlassTap(
+          onTap: onPressed,
+          label: tooltip,
+          width: 44,
+          height: 44,
+          clip: const CircleBorder(),
+          child: SizedBox(width: 44, height: 44, child: Center(child: ic(icon, size: 20, color: D.fg))),
         ),
       );
 }
@@ -846,7 +893,7 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 1),
         child: Material(
-          color: on ? D.surfaceHi : Colors.transparent,
+          color: on ? D.surfaceTop.withValues(alpha: 0.55) : Colors.transparent,
           borderRadius: BorderRadius.circular(D.rMd),
           child: InkWell(
             borderRadius: BorderRadius.circular(D.rMd),
@@ -888,7 +935,7 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
     Widget activeTile(ActiveSession a) {
       final on = a.id == store.sid;
       return Material(
-        color: on ? D.surfaceHi : Colors.transparent,
+        color: on ? D.surfaceTop.withValues(alpha: 0.55) : Colors.transparent,
         borderRadius: BorderRadius.circular(D.rMd),
         child: InkWell(
           borderRadius: BorderRadius.circular(D.rMd),
@@ -955,12 +1002,17 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
         );
 
     return Drawer(
-      backgroundColor: D.surface,
-      width: MediaQuery.of(context).size.width * 0.86,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      width: MediaQuery.of(context).size.width * 0.88,
       shape: const RoundedRectangleBorder(),
       child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
+        child: DGlass(
+          margin: const EdgeInsetsDirectional.fromSTEB(8, 8, 0, 8),
+          radius: 30,
+          premium: true,
+          tint: G.panelTint,
+          pad: const EdgeInsets.fromLTRB(10, 10, 10, 6),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(6, 2, 2, 10),
@@ -1050,8 +1102,11 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
 }
 
 class ChatView extends StatelessWidget {
-  const ChatView({super.key, required this.store});
+  const ChatView({super.key, required this.store, this.insets = EdgeInsets.zero});
   final HermesStore store;
+
+  /// Room taken by the glass bars floating over the transcript.
+  final EdgeInsets insets;
 
   static const _starters = <(IconCtor, String)>[
     (tb.ListCheck.new, 'لخّص ما أنجزته في آخر جلسة'),
@@ -1061,6 +1116,24 @@ class ChatView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Loading, empty and transcript states cross-dissolve into each other.
+    return AnimatedSwitcher(
+      duration: D.tSheetIn,
+      reverseDuration: D.tOut,
+      switchInCurve: D.ease,
+      switchOutCurve: D.easeIn,
+      transitionBuilder: (w, a) => FadeTransition(
+        opacity: a,
+        child: ScaleTransition(scale: Tween(begin: 0.985, end: 1.0).animate(a), child: w),
+      ),
+      child: KeyedSubtree(
+        key: ValueKey(store.opening ? 'opening' : store.sid == null ? 'none' : (store.items.isEmpty && !store.running) ? 'empty:${store.sid}' : 'chat:${store.sid}'),
+        child: _body(context),
+      ),
+    );
+  }
+
+  Widget _body(BuildContext context) {
     if (store.opening) return const Center(child: CircularProgressIndicator(color: kPrimary));
     if (store.sid == null) {
       return Center(
@@ -1080,9 +1153,10 @@ class ChatView extends StatelessWidget {
     if (store.items.isEmpty && !store.running) {
       return LayoutBuilder(
         builder: (context, box) => SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+          padding: EdgeInsets.fromLTRB(20, 24 + insets.top, 20, 12 + insets.bottom),
           child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: box.maxHeight - 36, minWidth: box.maxWidth - 40),
+            constraints: BoxConstraints(
+                minHeight: (box.maxHeight - 36 - insets.vertical).clamp(0, double.infinity), minWidth: box.maxWidth - 40),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1106,7 +1180,8 @@ class ChatView extends StatelessWidget {
     final extra = store.running ? 1 : 0;
     return ListView.builder(
       reverse: true,
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      // reverse: the first padding edge is the bottom (composer side).
+      padding: EdgeInsets.fromLTRB(16, 12 + insets.top, 16, 12 + insets.bottom),
       itemCount: items.length + extra,
       itemBuilder: (context, i) {
         if (extra == 1 && i == 0) return RunningLine(store: store);
@@ -1366,16 +1441,14 @@ class _RequestCardState extends State<RequestCard> {
     final isApproval = p.method == 'approval';
     final direct = ((p.params['choices'] as List?) ?? const []).map((e) => '$e').toList();
     final choices = direct.isEmpty ? _firstChoices(p.params) : direct;
-    return Container(
+    return DGlass(
       margin: const EdgeInsets.fromLTRB(10, 0, 10, 6),
-      padding: const EdgeInsets.all(12),
+      pad: const EdgeInsets.all(12),
+      radius: D.rLg,
+      tint: G.panelTint,
+      body: const Color(0xFF2A1E1A), // warm accent-tinted panel: needs attention
+      child: ConstrainedBox(
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
-      decoration: BoxDecoration(
-        color: D.surface,
-        border: Border.all(color: D.accentDim.withValues(alpha: 0.55)),
-        borderRadius: BorderRadius.circular(D.rLg),
-        boxShadow: D.soft,
-      ),
       child: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, mainAxisSize: MainAxisSize.min, children: [
           Row(children: [
@@ -1392,7 +1465,7 @@ class _RequestCardState extends State<RequestCard> {
             Container(
               constraints: const BoxConstraints(maxHeight: 120),
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: kBg, borderRadius: BorderRadius.circular(6)),
+              decoration: BoxDecoration(color: kBg.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(8)),
               child: SingleChildScrollView(
                 child: Text('${p.params['command'] ?? ''}',
                     textDirection: TextDirection.ltr,
@@ -1461,6 +1534,7 @@ class _RequestCardState extends State<RequestCard> {
             ]),
           ],
         ]),
+      ),
       ),
     );
   }
@@ -1611,11 +1685,11 @@ class _ComposerState extends State<Composer> {
       ),
       DReveal(
         show: store.queued.isNotEmpty,
-        child: DCard(
+        child: DGlass(
           margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
           pad: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          radius: D.rMd,
-          border: D.borderSoft,
+          radius: D.rLg,
+          tint: G.cardTint,
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(children: [
               ic(tb.Clock.new, size: 15),
@@ -1654,11 +1728,10 @@ class _ComposerState extends State<Composer> {
       ),
       DReveal(
         show: shown.isNotEmpty,
-        child: DCard(
+        child: DGlass(
           margin: const EdgeInsets.symmetric(horizontal: 12),
-          radius: D.rMd,
-          shadow: D.lift,
-          pad: EdgeInsets.zero,
+          radius: D.rLg,
+          tint: G.panelTint,
           child: ConstrainedBox(
             constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.42),
             child: ListView.builder(
@@ -1708,12 +1781,11 @@ class _ComposerState extends State<Composer> {
           ),
         ),
       ),
-      DCard(
+      DGlass(
         margin: const EdgeInsets.fromLTRB(10, 6, 10, 10),
         pad: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-        radius: 26,
-        shadow: D.soft,
-        border: D.hairline,
+        radius: 28,
+        premium: true,
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           DReveal(
             show: store.attachments.isNotEmpty,
@@ -1731,8 +1803,21 @@ class _ComposerState extends State<Composer> {
               ),
             ),
           ),
-          if (recording)
-            Padding(
+          AnimatedSwitcher(
+            duration: D.tIn,
+            reverseDuration: D.tOut,
+            switchInCurve: D.ease,
+            switchOutCurve: D.easeIn,
+            transitionBuilder: (w, a) => FadeTransition(
+              opacity: a,
+              child: SlideTransition(
+                position: Tween(begin: const Offset(0, 0.25), end: Offset.zero).animate(a),
+                child: w,
+              ),
+            ),
+            child: recording
+            ? Padding(
+              key: const ValueKey('rec'),
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(children: [
                 Container(width: 8, height: 8, decoration: const BoxDecoration(color: D.danger, shape: BoxShape.circle)),
@@ -1743,8 +1828,8 @@ class _ComposerState extends State<Composer> {
                 Expanded(child: Text('جارٍ التسجيل، يُفرَّغ عبر Groq عند الإيقاف', style: txt(12, color: D.muted))),
               ]),
             )
-          else
-            Padding(
+          : Padding(
+              key: const ValueKey('text'),
               padding: const EdgeInsets.symmetric(horizontal: 6),
               child: TextField(
               controller: ctl,
@@ -1766,6 +1851,7 @@ class _ComposerState extends State<Composer> {
               ),
             ),
             ),
+          ),
           DReveal(
             show: store.running && canAct && !recording,
             alignment: Alignment.topCenter,
@@ -1880,11 +1966,11 @@ Future<void> showModelSheet(BuildContext context, HermesStore store) {
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withValues(alpha: 0.55),
+    barrierColor: Colors.black.withValues(alpha: 0.42),
     sheetAnimationStyle: const AnimationStyle(
-      duration: D.tSheetIn,
+      duration: Duration(milliseconds: 460),
       reverseDuration: D.tSheetOut,
-      curve: D.ease,
+      curve: Cubic(0.2, 1.2, 0.3, 1), // rises with a soft liquid overshoot
       reverseCurve: D.easeIn,
     ),
     builder: (c) => ModelSheet(store: store),
@@ -1895,16 +1981,17 @@ Future<T?> showDDialog<T>(BuildContext context, WidgetBuilder builder) => showGe
       context: context,
       barrierDismissible: true,
       barrierLabel: 'close',
-      barrierColor: Colors.black.withValues(alpha: 0.55),
-      transitionDuration: D.tIn,
+      barrierColor: Colors.black.withValues(alpha: 0.42),
+      transitionDuration: const Duration(milliseconds: 380),
       pageBuilder: (c, _, _) => builder(c),
-      transitionBuilder: (c, a, _, child) {
-        final curved = CurvedAnimation(parent: a, curve: D.ease, reverseCurve: D.easeIn);
-        return FadeTransition(
-          opacity: curved,
-          child: ScaleTransition(scale: Tween(begin: 0.94, end: 1.0).animate(curved), child: child),
-        );
-      },
+      // The dialog materializes like iOS 26 glass: it settles in from slightly
+      // oversized while its content comes into focus, and dissolves on exit.
+      transitionBuilder: (c, a, _, child) => GlassMaterializeTransition(
+        animation: CurvedAnimation(parent: a, curve: D.ease, reverseCurve: D.easeIn),
+        scaleFrom: 1.1,
+        contentSigma: 8,
+        child: child,
+      ),
     );
 
 class ModelSheet extends StatefulWidget {
@@ -1924,14 +2011,16 @@ class _ModelSheetState extends State<ModelSheet> {
           ic(icon, size: 17, color: value ? D.accent : D.muted),
           const SizedBox(width: 12),
           Expanded(child: Text(label, style: txt(14))),
-          Switch(
+          GlassSwitch(
             value: value,
-            onChanged: onChanged,
-            activeThumbColor: Colors.white,
-            activeTrackColor: D.accent,
-            inactiveThumbColor: D.muted,
-            inactiveTrackColor: D.surfaceTop,
-            trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+            onChanged: (v) {
+              H.fire(Hx.select);
+              onChanged(v);
+            },
+            useOwnLayer: true,
+            activeColor: D.accent,
+            inactiveColor: D.surfaceTop,
+            semanticLabel: label,
           ),
         ]),
       );
@@ -1997,7 +2086,7 @@ class _ModelSheetState extends State<ModelSheet> {
           rows.add(Padding(
             padding: const EdgeInsets.symmetric(vertical: 1),
             child: Material(
-              color: cur ? D.accentWash : Colors.transparent,
+              color: cur ? D.accentWash.withValues(alpha: 0.75) : Colors.transparent,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(D.rMd),
                 side: BorderSide(color: cur ? D.accentDim.withValues(alpha: 0.5) : Colors.transparent),
@@ -2069,13 +2158,12 @@ class _ModelSheetState extends State<ModelSheet> {
         }
         return Padding(
           padding: EdgeInsets.only(bottom: kb),
-          child: Container(
+          child: DGlass(
             height: h * 0.86,
-            decoration: const BoxDecoration(
-              color: D.surface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-              boxShadow: D.lift,
-            ),
+            margin: const EdgeInsets.fromLTRB(6, 0, 6, 6),
+            radius: 34,
+            premium: true,
+            tint: G.panelTint,
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Center(
                 child: Container(
@@ -2103,9 +2191,9 @@ class _ModelSheetState extends State<ModelSheet> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: D.surfaceHi,
+                    color: D.bg.withValues(alpha: 0.32),
                     borderRadius: BorderRadius.circular(D.rLg),
-                    border: Border.all(color: D.borderSoft),
+                    border: Border.all(color: D.hairline),
                   ),
                   child: Column(children: [
                     _effortRow(effort),
@@ -2479,23 +2567,26 @@ class DPageTransitions extends PageTransitionsBuilder {
   const DPageTransitions();
 
   @override
-  Duration get transitionDuration => const Duration(milliseconds: 360);
+  Duration get transitionDuration => const Duration(milliseconds: 420);
   @override
-  Duration get reverseTransitionDuration => const Duration(milliseconds: 240);
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 260);
 
   @override
   Widget buildTransitions<T>(PageRoute<T> route, BuildContext context, Animation<double> animation,
       Animation<double> secondaryAnimation, Widget child) {
     final rtl = Directionality.of(context) == TextDirection.rtl;
-    final a = CurvedAnimation(parent: animation, curve: D.ease, reverseCurve: D.easeIn);
+    // Incoming page: slides from the end edge with a slight liquid overshoot.
+    final a = CurvedAnimation(parent: animation, curve: const Cubic(0.2, 1.08, 0.3, 1), reverseCurve: D.easeIn);
     final b = CurvedAnimation(parent: secondaryAnimation, curve: D.ease, reverseCurve: D.easeIn);
-    return SlideTransition(
-      position: Tween(begin: Offset.zero, end: Offset(rtl ? 0.06 : -0.06, 0)).animate(b),
+    // Outgoing page recedes into depth (smaller, dimmer), like a glass layer
+    // stepping back under the new one.
+    return ScaleTransition(
+      scale: Tween(begin: 1.0, end: 0.94).animate(b),
       child: FadeTransition(
-        opacity: Tween(begin: 1.0, end: 0.6).animate(b),
+        opacity: Tween(begin: 1.0, end: 0.5).animate(b),
         child: SlideTransition(
-          position: Tween(begin: Offset(rtl ? -0.08 : 0.08, 0), end: Offset.zero).animate(a),
-          child: FadeTransition(opacity: a, child: child),
+          position: Tween(begin: Offset(rtl ? -0.22 : 0.22, 0), end: Offset.zero).animate(a),
+          child: FadeTransition(opacity: CurvedAnimation(parent: animation, curve: const Interval(0, 0.6)), child: child),
         ),
       ),
     );
@@ -2508,8 +2599,11 @@ class _PageBar extends StatelessWidget {
   final String title;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(6, 6, 12, 4),
+  Widget build(BuildContext context) => DGlass(
+        margin: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+        pad: const EdgeInsets.fromLTRB(4, 4, 12, 4),
+        radius: 26,
+        premium: true,
         child: Row(children: [
           DIconBtn(
             icon: tb.ArrowRight.new,
@@ -2696,7 +2790,7 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBg,
-      body: SafeArea(
+      body: DAmbient(child: SafeArea(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           const _PageBar(title: 'البوابات والاتصال'),
           Expanded(
@@ -2720,7 +2814,8 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
                       const SizedBox(height: 12),
                     ],
                     const DSection('البوابات المحفوظة'),
-                    DCard(
+                    DGlass(
+                      tint: G.panelTint,
                       pad: const EdgeInsets.symmetric(vertical: 3),
                       child: Column(children: [
                         for (var i = 0; i < conns.length; i++) ...[
@@ -2750,7 +2845,7 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
                   ]),
           ),
         ]),
-      ),
+      )),
     );
   }
 }
@@ -2906,14 +3001,16 @@ class _ConnectionEditorPageState extends State<ConnectionEditorPage> {
     final editing = widget.existing != null;
     return Scaffold(
       backgroundColor: kBg,
-      body: SafeArea(
+      body: DAmbient(child: SafeArea(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _PageBar(title: editing ? 'تعديل البوابة' : 'بوابة جديدة'),
           Expanded(
             child: ListView(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24), children: [
-              DCard(
+              DGlass(
                 pad: const EdgeInsets.all(16),
-                shadow: D.lift,
+                radius: 24,
+                premium: true,
+                tint: G.panelTint,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   _efield('الاسم', name, tb.Tag.new, hint: 'اختياري'),
                   const SizedBox(height: 14),
@@ -3003,7 +3100,7 @@ class _ConnectionEditorPageState extends State<ConnectionEditorPage> {
             ]),
           ),
         ]),
-      ),
+      )),
     );
   }
 }
