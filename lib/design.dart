@@ -347,30 +347,27 @@ class DBtn extends StatelessWidget {
           ),
         );
       }
-      // On a glass surface: a solid fill with liquid press physics.
+      // On a glass surface: an inset glass pill with liquid press physics.
       return dGlassTap(
         onTap: onPressed,
         haptic: hx,
         width: w,
         label: label,
-        shape: _pill(h),
         clip: const StadiumBorder(),
-        child: AnimatedContainer(
-          duration: D.tIn,
-          curve: D.ease,
-          width: w,
-          decoration: BoxDecoration(
-            color: switch (kind) {
-              DBtnKind.fill => enabled ? D.accent : D.surfaceHi,
-              DBtnKind.outline => D.surfaceHi.withValues(alpha: 0.7),
-              DBtnKind.ghost => Colors.transparent,
-              DBtnKind.danger => enabled ? D.danger : D.surfaceHi,
-            },
-            borderRadius: BorderRadius.circular(D.rPill),
-            border: kind == DBtnKind.outline ? Border.all(color: D.hairline) : null,
-          ),
-          child: content,
-        ),
+        child: kind == DBtnKind.ghost
+            ? SizedBox(width: w, child: content)
+            : DGlassPill(
+                width: w,
+                inset: true,
+                ghost: !enabled,
+                body: switch (kind) {
+                  DBtnKind.fill => D.accent,
+                  DBtnKind.danger => D.danger,
+                  _ => D.surfaceTop,
+                },
+                tint: kind == DBtnKind.outline ? 0.5 : 0.96,
+                child: content,
+              ),
       );
     });
   }
@@ -416,10 +413,9 @@ class DIconBtn extends StatelessWidget {
     final label = tooltip ?? '';
     Widget b;
     if (level != GlassLevel.none) {
-      // On a glass surface: solid disc, liquid physics.
-      final bg = primary
-          ? (active ? D.danger : D.accent)
-          : (active ? D.accentWash : D.surfaceHi.withValues(alpha: 0.72));
+      // On a glass surface (composer, sheet, dialog): an inset glass drop,
+      // same lens and rim as every glass control, no shadow of its own.
+      // Disabled reads as an empty rim instead of a grey hole.
       b = dGlassTap(
         onTap: onPressed,
         haptic: hx,
@@ -427,15 +423,16 @@ class DIconBtn extends StatelessWidget {
         height: size,
         label: label,
         clip: const CircleBorder(),
-        child: AnimatedContainer(
-          duration: D.tIn,
-          curve: D.ease,
+        child: DGlassPill(
           width: size,
           height: size,
-          decoration: BoxDecoration(
-            color: enabled ? bg : D.surfaceHi.withValues(alpha: 0.4),
-            shape: BoxShape.circle,
-          ),
+          radius: size / 2,
+          inset: true,
+          ghost: !enabled,
+          body: primary
+              ? (active ? D.danger : D.accent)
+              : (active ? D.accentWash : D.surfaceTop),
+          tint: primary ? 0.96 : (active ? 0.9 : 0.5),
           child: glyph,
         ),
       );
@@ -1180,14 +1177,13 @@ class DModelChip extends StatelessWidget {
       haptic: Hx.select,
       shape: _pill(40),
       clip: const StadiumBorder(),
-      child: Container(
+      child: DGlassPill(
+        inset: true,
+        body: D.surfaceTop,
+        tint: 0.5,
+        child: Container(
             constraints: const BoxConstraints(minHeight: 40),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: D.surfaceHi.withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(D.rPill),
-              border: Border.all(color: D.hairline),
-            ),
             child: Directionality(
               textDirection: TextDirection.ltr,
               // Wide: one line "name · level". Narrow (most phones once attach,
@@ -1245,6 +1241,7 @@ class DModelChip extends StatelessWidget {
               }),
             ),
           ),
+      ),
     );
   }
 }
@@ -1411,8 +1408,7 @@ class _BackgroundRow extends StatelessWidget {
 
   /// Leading state glyph: spinner while running, check when done, x on failure.
   Widget get _glyph => switch (item.state) {
-        BackgroundState.running => const SizedBox(
-            width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.6, color: D.accent)),
+        BackgroundState.running => const RepaintBoundary(child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.6, color: D.accent))),
         BackgroundState.done => ic(tb.CircleCheck.new, size: 16, color: D.ok),
         BackgroundState.failed => ic(tb.CircleX.new, size: 16, color: D.danger),
       };
@@ -1542,7 +1538,7 @@ class _PulseState extends State<_Pulse> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
+    return RepaintBoundary(child: FadeTransition(
       opacity: Tween<double>(begin: 0.45, end: 1).animate(CurvedAnimation(parent: c, curve: Curves.easeInOut)),
       child: Container(
         width: 9,
@@ -1550,6 +1546,6 @@ class _PulseState extends State<_Pulse> with SingleTickerProviderStateMixin {
         margin: const EdgeInsets.symmetric(horizontal: 3),
         decoration: const BoxDecoration(color: D.accent, shape: BoxShape.circle),
       ),
-    );
+    ));
   }
 }

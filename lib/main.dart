@@ -326,8 +326,7 @@ class _LoginPageState extends State<LoginPage> {
                       ]),
                 ),
                 if (busy && usingId == c.id)
-                  const SizedBox(
-                      width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimary))
+                  const RepaintBoundary(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimary)))
                 else
                   ic(tb.ArrowLeft.new, size: 16, color: D.faint),
               ]),
@@ -650,14 +649,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           child: SafeArea(
             child: DGlassRoot(child: Stack(children: [
               Positioned.fill(
-                child: ValueListenableBuilder<double>(
+                child: RepaintBoundary(child: ValueListenableBuilder<double>(
                   valueListenable: _topH,
                   builder: (context, top, _) => ValueListenableBuilder<double>(
                     valueListenable: _botH,
                     builder: (context, bottom, _) =>
                         ChatView(store: store, insets: EdgeInsets.only(top: top, bottom: bottom)),
                   ),
-                ),
+                )),
               ),
               Positioned(
                 top: 0,
@@ -1335,7 +1334,7 @@ class _MessageTileState extends State<MessageTile> {
                 : Row(mainAxisSize: MainAxisSize.min, children: [
                     DElapsed(from: it.started),
                     const SizedBox(width: 6),
-                    const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6, color: D.accent)),
+                    const RepaintBoundary(child: SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6, color: D.accent))),
                   ]),
           ),
           body: Directionality(
@@ -1916,7 +1915,7 @@ class _ComposerState extends State<Composer> {
             if (transcribing)
               const Padding(
                 padding: EdgeInsets.all(8),
-                child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: D.muted)),
+                child: RepaintBoundary(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: D.muted))),
               )
             else
               DIconBtn(
@@ -2202,8 +2201,7 @@ class _ModelSheetState extends State<ModelSheet> {
                   AnimatedOpacity(
                     opacity: busy ? 1 : 0,
                     duration: D.tIn,
-                    child: const SizedBox(
-                        width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: D.accent)),
+                    child: const RepaintBoundary(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: D.accent))),
                   ),
                 ]),
               ),
@@ -2311,9 +2309,12 @@ class _StatusDotState extends State<StatusDot> with SingleTickerProviderStateMix
     if (!widget.busy) {
       return Container(width: 9, height: 9, decoration: const BoxDecoration(color: kMfg, shape: BoxShape.circle));
     }
-    return FadeTransition(
-      opacity: Tween(begin: 0.35, end: 1.0).animate(c),
-      child: Container(width: 9, height: 9, decoration: const BoxDecoration(color: kOk, shape: BoxShape.circle)),
+    // Own layer: the breathing dot repaints alone, never the glass around it.
+    return RepaintBoundary(
+      child: FadeTransition(
+        opacity: Tween(begin: 0.35, end: 1.0).animate(c),
+        child: Container(width: 9, height: 9, decoration: const BoxDecoration(color: kOk, shape: BoxShape.circle)),
+      ),
     );
   }
 }
@@ -2398,7 +2399,7 @@ class AttachChip extends StatelessWidget {
                   Container(
                     color: Colors.black.withValues(alpha: 0.45),
                     child: const Center(
-                        child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: D.fg))),
+                        child: RepaintBoundary(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: D.fg)))),
                   ),
               ]),
             ),
@@ -2431,7 +2432,7 @@ class AttachChip extends StatelessWidget {
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         a.uploading
-            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.6, color: D.accent))
+            ? const RepaintBoundary(child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.6, color: D.accent)))
             : Tooltip(
                 message: a.error == null ? a.name : 'فشل الرفع؛ أعد الإرسال للمحاولة: ${a.error}',
                 child: ic(a.error == null ? _fileIcon(a.name) : tb.AlertCircle.new,
@@ -2549,7 +2550,7 @@ class _MediaCardState extends State<MediaCard> {
                 ]),
               ),
               busy
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: D.accent))
+                  ? const RepaintBoundary(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 1.8, color: D.accent)))
                   : ic(bytes == null ? tb.Download.new : tb.Share.new, size: 17),
             ]),
           ),
@@ -2760,7 +2761,7 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
                     ]),
               ),
               if (busy)
-                const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimary))
+                const RepaintBoundary(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimary)))
               else if (active)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 7),
