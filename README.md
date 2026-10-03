@@ -15,16 +15,17 @@
 
 ## Screenshots
 
-Real captures from an Android phone, not mockups. Private session titles and device-status details are obscured; original unredacted captures are not published. The app currently uses **Arabic RTL UI**, with model names and Thinking levels in English. Repository documentation is in English.
+Real captures of the 1.3.0 Liquid Glass design from an Android phone, not mockups. Private session titles, the gateway host and the status bar are removed; original unredacted captures are not published. The app currently uses **Arabic RTL UI**, with model names and Thinking levels in English. Repository documentation is in English.
 
 <p>
-  <img src="docs/screenshots/chat.png" alt="Hermes Agent Android chat with a real demo response and mobile composer" width="245">
-  <img src="docs/screenshots/models.png" alt="Searchable model picker in the Hermes Mobile remote gateway" width="245">
+  <img src="docs/screenshots/chat.png" alt="Hermes Agent Android chat with a real demo response under the floating glass top bar and composer" width="245">
+  <img src="docs/screenshots/models.png" alt="Glass model sheet with English Thinking levels and the selected model checked" width="245">
   <img src="docs/screenshots/sessions.png" alt="Hermes Android session manager with private session titles blurred" width="245">
 </p>
 
 ## What you can do
 
+- **Liquid Glass design:** the top bar and composer float as glass over the transcript, with spring presses and materializing dialogs, tuned to scroll near 120 Hz on Android.
 - **Chat with your own agent:** streaming text, reasoning sections and tool activity.
 - **Manage sessions:** create, search, reopen and close sessions on the connected server.
 - **Pull a session between devices:** if a session is already open on another device, the app offers to pull it here and re-sends your draft instead of refusing to work. A companion desktop plugin (see below) pulls in the other direction.
