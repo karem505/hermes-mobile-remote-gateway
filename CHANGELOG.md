@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.3.0
+
+Liquid Glass design, tuned for 120 Hz Android displays.
+
+### Design
+- The top bar and composer float as glass over the transcript, so messages scroll beneath them; the drawer, model sheet, dialogs, cards and page headers use the same glass surfaces.
+- Glass is a warm tint with a lit top edge and a specular rim, built on the existing colour tokens (no palette change).
+- Every control on a glass surface (attach, commands, model chip, voice, send, steer, queue, dialog actions) is an inset glass drop; disabled controls show an empty rim.
+- Presses squash and spring back like a liquid drop; dialogs and revealed surfaces materialize (settle in from slightly oversized); page routes slide in with a soft overshoot.
+- Model sheet: Thinking levels use compact labels (X-High, Med) that never clip, and the selected model is marked with a glass check instead of a flat disc.
+
+### Performance
+- No refraction shaders or live backdrop blur: on a Snapdragon 7-class phone a live blur behind the bars capped scrolling at ~67-77 fps; without it the transcript scrolls at ~100-110 fps on a 120 Hz panel. `--dart-define=GLASS_BLUR=true` restores the blur for comparison.
+- The app asks Android for the display's fastest refresh rate on start and resume.
+- Spinners and live status dots repaint on their own layers; bar heights update through notifiers instead of rebuilding the screen.
+- Optional side-by-side build: `HERMES_APP_VARIANT=<name>` produces a separate application id and label for experiments.
+
 ## 1.2.0
 
 Two cross-device features on top of 1.1.0.
