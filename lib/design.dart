@@ -943,7 +943,10 @@ class DSegmented extends StatelessWidget {
               child: AnimatedOpacity(
                 opacity: idx < 0 ? 0 : 1,
                 duration: D.tIn,
-                child: DGlassPill(body: D.surfaceTop, tint: 0.9, child: const SizedBox.expand()),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 1),
+                  child: DGlassPill(body: D.surfaceTop, tint: 0.9, child: const SizedBox.expand()),
+                ),
               ),
             ),
             Row(children: [
@@ -954,13 +957,20 @@ class DSegmented extends StatelessWidget {
                     haptic: Hx.select,
                     label: labels[i],
                     child: Center(
-                      child: AnimatedDefaultTextStyle(
-                        duration: D.tIn,
-                        curve: D.ease,
-                        style: txt(12.5,
-                            color: i == idx ? D.fg : D.muted,
-                            weight: i == idx ? FontWeight.w700 : FontWeight.w500),
-                        child: Text(labels[i], maxLines: 1),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        // Never clip or wrap a level name: shrink it to fit.
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: AnimatedDefaultTextStyle(
+                            duration: D.tIn,
+                            curve: D.ease,
+                            style: txt(12.5,
+                                color: i == idx ? D.fg : D.muted,
+                                weight: i == idx ? FontWeight.w700 : FontWeight.w500),
+                            child: Text(labels[i], maxLines: 1, softWrap: false),
+                          ),
+                        ),
                       ),
                     ),
                   ),

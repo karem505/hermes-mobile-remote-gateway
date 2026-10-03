@@ -1958,6 +1958,13 @@ String _effortLabel(String e) => switch (e) {
       _ => e,
     };
 
+/// Compact Thinking level for tight segment cells (always English).
+String _effortShort(String e) => switch (e) {
+      'medium' => 'Med',
+      'xhigh' => 'X-High',
+      _ => _effortLabel(e),
+    };
+
 Future<void> showModelSheet(BuildContext context, HermesStore store) {
   store.loadModels();
   return showModalBottomSheet(
@@ -2036,7 +2043,9 @@ class _ModelSheetState extends State<ModelSheet> {
         const SizedBox(height: 10),
         DSegmented(
           options: options,
-          labels: [for (final e in options) _effortLabel(e)],
+          // Segment cells are ~60 px on a phone: short labels so every level
+          // fits on one line. The full name stays in the header row above.
+          labels: [for (final e in options) _effortShort(e)],
           value: effort,
           onChanged: (e) => widget.store.setConfig('reasoning', e),
         ),
@@ -2082,10 +2091,10 @@ class _ModelSheetState extends State<ModelSheet> {
           rows.add(Padding(
             padding: const EdgeInsets.symmetric(vertical: 1),
             child: Material(
-              color: cur ? D.accentWash.withValues(alpha: 0.75) : Colors.transparent,
+              color: cur ? D.surfaceHi.withValues(alpha: 0.9) : Colors.transparent,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(D.rMd),
-                side: BorderSide(color: cur ? D.accentDim.withValues(alpha: 0.5) : Colors.transparent),
+                borderRadius: BorderRadius.circular(D.rLg),
+                side: BorderSide(color: cur ? D.hairline : Colors.transparent),
               ),
               child: InkWell(
                 borderRadius: BorderRadius.circular(D.rMd),
@@ -2136,14 +2145,29 @@ class _ModelSheetState extends State<ModelSheet> {
                                   style: txt(11, color: D.muted, height: 1.35)),
                           ]),
                         ),
-                        if (cur) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 22, height: 22,
-                            decoration: const BoxDecoration(color: D.accent, shape: BoxShape.circle),
-                            child: Center(child: ic(tb.Check.new, size: 13, color: D.onAccent)),
-                          ),
-                        ],
+                        // Selected mark: a small glass drop (same rim, lit top
+                        // edge and soft shadow as every glass control) holding
+                        // a coral check, scaling in when the row becomes current.
+                        AnimatedSwitcher(
+                          duration: D.tIn,
+                          switchInCurve: D.spring,
+                          switchOutCurve: D.easeIn,
+                          transitionBuilder: (w, a) => ScaleTransition(scale: a, child: w),
+                          child: cur
+                              ? Padding(
+                                  key: const ValueKey('on'),
+                                  padding: const EdgeInsets.only(left: 10),
+                                  child: DGlassPill(
+                                    width: 28,
+                                    height: 28,
+                                    radius: 14,
+                                    body: D.surfaceTop,
+                                    tint: 0.95,
+                                    child: Center(child: ic(tb.Check.new, size: 15, color: D.accent)),
+                                  ),
+                                )
+                              : const SizedBox(key: ValueKey('off')),
+                        ),
                       ]),
                     ),
                   ),
