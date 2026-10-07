@@ -151,6 +151,27 @@ class HermesApi {
     return r.bodyBytes;
   }
 
+  /// The latest page of a stored session's transcript (chronological). This is
+  /// the transcript source the desktop uses too: `session.resume` with the
+  /// full history serialises every message of the whole compression lineage
+  /// (megabytes on a long session) and blocks the switch for seconds.
+  Future<List<Map<String, dynamic>>> sessionMessages(String storedId, {int limit = 300}) async {
+    Future<http.Response> get() => http
+        .get(
+            Uri.parse('$baseUrl/api/sessions/${Uri.encodeComponent(storedId)}/messages')
+                .replace(queryParameters: {'limit': '$limit', 'order': 'latest'}),
+            headers: _headers)
+        .timeout(const Duration(seconds: 30));
+    var r = await get();
+    if (r.statusCode == 401 || r.statusCode == 403) {
+      await login();
+      r = await get();
+    }
+    if (r.statusCode != 200) throw 'تعذر تحميل المحادثة (رمز ${r.statusCode})';
+    final body = jsonDecode(utf8.decode(r.bodyBytes));
+    return [for (final m in (body['messages'] as List? ?? const [])) Map<String, dynamic>.from(m as Map)];
+  }
+
   Future<String> ticket() async {
     final r = await _postAuthed('/api/auth/ws-ticket', {});
     if (r.statusCode != 200) throw AuthError('تعذر الحصول على تذكرة الاتصال (${r.statusCode}).');

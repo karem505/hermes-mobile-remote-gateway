@@ -156,7 +156,7 @@ class HermesStore extends ChangeNotifier {
           return y.lastActive.compareTo(x.lastActive);
         });
       final mine = sid == null ? null : active.where((a) => a.id == sid).firstOrNull;
-      if (mine != null && mine.busy && !running) running = true;
+      if (sid != null && !_loading && !opening) _reconcileRunning(mine);
       notifyListeners();
     } catch (_) {}
   }
@@ -288,49 +288,129 @@ class HermesStore extends ChangeNotifier {
     if ((i['title'] as String?)?.isNotEmpty ?? false) title = i['title'] as String;
   }
 
-  void _loadMessages(List? msgs) {
-    items.clear();
-    for (final m in msgs ?? const []) {
-      final role = m['role'];
-      if (role == 'user') {
-        final (body, files) = splitAttachments('${m['text'] ?? ''}');
-        items.add(ChatItem.user(body)..files = files);
-      } else if (role == 'assistant') {
-        final t = '${m['text'] ?? ''}';
-        if (t.trim().isNotEmpty) items.add(ChatItem.assistant(t));
-      } else if (role == 'tool') {
-        items.add(ChatItem.tool('${m['name']}', detail: '${m['context'] ?? ''}'));
-      }
+  // --- Session switching -----------------------------------------------------
+  //
+  // Each opened session keeps its rendered view, so switching back paints
+  // instantly and then reconciles quietly. The transcript comes from the REST
+  // page (like the desktop) and `session.resume` is called with
+  // `omit_messages`, which on a long session is ~20 ms instead of seconds of
+  // serialising the whole compression lineage over the socket.
+
+  final _views = <String, _SessionView>{};
+  int _openGen = 0;
+  bool _loading = false;
+  final _held = <Map<String, dynamic>>[];
+  Future<void>? _openFuture;
+
+  /// Whether the chat shown is being reconciled with the server in the background.
+  bool get refreshing => _loading && !opening;
+
+  void _stash() {
+    final key = storedId, id = sid;
+    if (key == null || id == null || opening) return;
+    _views.remove(key);
+    _views[key] = _SessionView(id, title, List.of(items), running, statusText);
+    while (_views.length > 12) {
+      _views.remove(_views.keys.first);
     }
   }
 
-  Future<void> openSession(SessionRow row) async {
-    opening = true;
+  Future<void> openSession(SessionRow row) {
+    final f = _open(row);
+    _openFuture = f;
+    f.whenComplete(() {
+      if (identical(_openFuture, f)) _openFuture = null;
+    });
+    return f;
+  }
+
+  Future<void> _open(SessionRow row) async {
+    final gen = ++_openGen;
+    _stash();
+    final cached = _views.remove(row.id);
+    if (cached != null) _views[row.id] = cached;
     storedId = row.id;
-    title = row.title;
-    items.clear();
     pending = null;
-    running = false;
+    _loading = true;
+    _held.clear();
+    if (cached != null) {
+      sid = cached.sid;
+      title = row.title.isNotEmpty ? row.title : cached.title;
+      items
+        ..clear()
+        ..addAll(cached.items);
+      running = cached.running;
+      statusText = cached.statusText;
+      opening = false;
+    } else {
+      title = row.title;
+      items.clear();
+      running = false;
+      statusText = '';
+      opening = true;
+    }
     notifyListeners();
     try {
-      final r = await gw.call('session.resume', {'session_id': row.id, 'source': 'mobile'}, const Duration(seconds: 120));
+      final transcript = gw.api
+          .sessionMessages(row.id)
+          .then<List<Map<String, dynamic>>?>((v) => v, onError: (Object _) => null);
+      final r = await gw.call('session.resume', {'session_id': row.id, 'source': 'mobile', 'omit_messages': true},
+          const Duration(seconds: 60));
+      if (gen != _openGen) return;
+      // Live frames from before this snapshot are already in it.
+      _held.clear();
+      final rows = await transcript;
+      if (gen != _openGen) return;
+      final List<ChatItem> next;
+      if (rows != null) {
+        next = chatItemsFromRest(rows);
+      } else {
+        // A serve without the REST transcript route: the old full resume.
+        final full = await gw.call('session.resume', {'session_id': row.id, 'source': 'mobile'}, const Duration(seconds: 120));
+        if (gen != _openGen) return;
+        next = chatItemsFromResume(full['messages'] as List?);
+      }
+      final isRunning = r['running'] == true;
+      if (isRunning) appendInflight(next, r['inflight']);
       sid = '${r['session_id']}';
-      _loadMessages(r['messages'] as List?);
+      items
+        ..clear()
+        ..addAll(next);
       _applyInfo((r['info'] as Map?)?.cast<String, dynamic>());
-      if (r['running'] == true) running = true;
+      running = isRunning;
+      statusText = isRunning ? (statusText.isEmpty ? 'يعمل...' : statusText) : '';
+      _lastEventAt = clock();
+      _idleStreak = 0;
+      _busyStreak = 0;
       for (final q in (r['open_requests'] as List? ?? const [])) {
         pending = PendingRequest(q['id'] as Object, '${q['method']}', Map<String, dynamic>.from(q['params'] as Map));
+      }
+      opening = false;
+      _loading = false;
+      final held = List.of(_held);
+      _held.clear();
+      for (final e in held) {
+        _onEvent(e);
       }
       loadCatalog();
       unawaited(refreshBackground());
     } catch (e) {
-      _flash('تعذر فتح الجلسة: $e');
+      if (gen == _openGen) _flash('تعذر فتح الجلسة: $e');
+    } finally {
+      if (gen == _openGen) {
+        opening = false;
+        _loading = false;
+        _held.clear();
+        notifyListeners();
+      }
     }
-    opening = false;
-    notifyListeners();
   }
 
   Future<void> newSession() async {
+    _stash();
+    ++_openGen;
+    _loading = false;
+    _held.clear();
     opening = true;
     items.clear();
     pending = null;
@@ -352,6 +432,8 @@ class HermesStore extends ChangeNotifier {
 
   Future<bool> send(String text) async {
     final t = text.trim();
+    final inFlight = _openFuture;
+    if (inFlight != null) await inFlight;
     if (sid == null || (t.isEmpty && attachments.isEmpty)) return false;
     if (t.startsWith('/') && attachments.isEmpty) {
       await _slash(t);
@@ -409,6 +491,7 @@ class HermesStore extends ChangeNotifier {
     if (!steer) {
       running = true;
       statusText = 'يفكر...';
+      _submittedAt = clock();
     }
     notifyListeners();
     try {
@@ -661,6 +744,7 @@ class HermesStore extends ChangeNotifier {
       _flash('تعذر إغلاق الجلسة: $e');
       return;
     }
+    if (storedId != null) _views.remove(storedId);
     sid = null;
     storedId = null;
     items.clear();
@@ -903,6 +987,55 @@ class HermesStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  // --- Running state ---------------------------------------------------------
+  //
+  // Events drive `running`; the 4 s active-list poll only corrects it, and only
+  // when it is clearly wrong. The server keeps `running` true for a moment after
+  // `message.complete` (and reports `starting` while it builds an agent on a
+  // plain resume), so trusting a single poll pinned the chat as running forever.
+
+  /// Clock for the running-state guards (tests move it).
+  @visibleForTesting
+  DateTime Function() clock = DateTime.now;
+
+  DateTime _lastEventAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _turnEndedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _submittedAt = DateTime.fromMillisecondsSinceEpoch(0);
+  int _idleStreak = 0;
+  int _busyStreak = 0;
+
+  void _reconcileRunning(ActiveSession? mine) {
+    final now = clock();
+    final status = mine?.status ?? '';
+    final busy = status == 'working' || status == 'waiting' || status == 'streaming';
+    final idle = mine != null && status == 'idle';
+    if (busy && !running) {
+      _idleStreak = 0;
+      if (now.difference(_turnEndedAt) > const Duration(seconds: 8) && ++_busyStreak >= 2) {
+        _busyStreak = 0;
+        running = true;
+        if (statusText.isEmpty) statusText = 'يعمل...';
+      }
+    } else if (idle && running) {
+      _busyStreak = 0;
+      if (now.difference(_lastEventAt) > const Duration(seconds: 6) &&
+          now.difference(_submittedAt) > const Duration(seconds: 10) &&
+          ++_idleStreak >= 2) {
+        _idleStreak = 0;
+        _closeThinking();
+        running = false;
+        statusText = '';
+        _turnEndedAt = now;
+        final last = items.isNotEmpty ? items.last : null;
+        if (last != null && last.kind == 'assistant' && last.text.trim().isEmpty) items.removeLast();
+        unawaited(_drainQueue());
+      }
+    } else {
+      _idleStreak = 0;
+      _busyStreak = 0;
+    }
+  }
+
   void _onEvent(Map<String, dynamic> e) {
     final type = '${e['type']}';
     // Off by default; a diagnostic build passes --dart-define=HERMES_TRACE_EVENTS=true.
@@ -927,7 +1060,24 @@ class HermesStore extends ChangeNotifier {
       }
       return;
     }
-    if (sid == null || e['session_id'] != sid) return;
+    if (_loading) {
+      if (_held.length < 4000) _held.add(e);
+      return;
+    }
+    if (sid == null || e['session_id'] != sid) {
+      // A session left running in the background finished: its cached view
+      // must not come back as running.
+      if (type == 'message.complete' || type == 'error') {
+        for (final v in _views.values) {
+          if (v.sid == e['session_id']) {
+            v.running = false;
+            v.statusText = '';
+          }
+        }
+      }
+      return;
+    }
+    _lastEventAt = clock();
     switch (type) {
       case 'agent.terminal.output':
         _appendOutput('${payload['process_id'] ?? ''}', '${payload['chunk'] ?? ''}');
@@ -998,7 +1148,7 @@ class HermesStore extends ChangeNotifier {
       case 'message.complete':
         _closeThinking();
         running = false;
-        refreshActive();
+        _turnEndedAt = clock();
         statusText = '';
         final text = '${payload['text'] ?? ''}';
         final target = _streamTarget();
@@ -1057,6 +1207,7 @@ class HermesStore extends ChangeNotifier {
       case 'error':
         _closeThinking();
         running = false;
+        _turnEndedAt = clock();
         _drainQueue();
         final msg = '${payload['message'] ?? 'خطأ'}';
         items.add(ChatItem.notice(msg));
@@ -1150,4 +1301,161 @@ final _attachToken = RegExp(r'''@(?:image|file):(?:`([^`\n]+)`|"([^"\n]+)"|'([^'
   final body = text.replaceAll(_attachToken, '').replaceAll(_imageHint, '').replaceAll(_fileHint, '')
       .replaceAll(RegExp(r'\n{3,}'), '\n\n').trim();
   return (body, files);
+}
+
+
+/// A session's rendered chat kept across switches.
+class _SessionView {
+  _SessionView(this.sid, this.title, this.items, this.running, this.statusText);
+  final String sid;
+  final String title;
+  final List<ChatItem> items;
+  bool running;
+  String statusText;
+}
+
+/// Chat items from `session.resume`'s server-projected `messages`.
+List<ChatItem> chatItemsFromResume(List? msgs) {
+  final out = <ChatItem>[];
+  for (final m in msgs ?? const []) {
+    final role = m['role'];
+    if (role == 'user') {
+      final (body, files) = splitAttachments('${m['text'] ?? ''}');
+      out.add(ChatItem.user(body)..files = files);
+    } else if (role == 'assistant') {
+      final t = '${m['text'] ?? ''}';
+      if (t.trim().isNotEmpty) out.add(ChatItem.assistant(t));
+    } else if (role == 'tool') {
+      out.add(ChatItem.tool('${m['name']}', detail: '${m['context'] ?? ''}'));
+    }
+  }
+  return out;
+}
+
+String _contentText(Object? content) {
+  if (content is String) return content;
+  if (content is List) {
+    return [
+      for (final p in content)
+        if (p is Map && p['type'] == 'text') '${p['text'] ?? ''}'
+    ].join('\n');
+  }
+  return content == null ? '' : '$content';
+}
+
+const _skillPrefix = '[IMPORTANT: The user has invoked the ';
+
+/// `/skill instruction` for a slash-skill-expanded user turn, as the user typed it.
+String? _skillInvocation(String text) {
+  if (!text.startsWith(_skillPrefix)) return null;
+  final name = RegExp(r'"([^"]*)"').firstMatch(text.substring(_skillPrefix.length - 1))?.group(1)?.trim() ?? '';
+  final label = name.startsWith('/') ? name : '/$name';
+  String? instruction;
+  if (text.contains(' skill bundle,')) {
+    final i = text.indexOf('\nUser instruction: ');
+    if (i >= 0) {
+      final rest = text.substring(i + '\nUser instruction: '.length);
+      final j = rest.indexOf('\n\n[Loaded as part of the ');
+      instruction = (j >= 0 ? rest.substring(0, j) : rest).trim();
+    }
+  } else {
+    const marker = 'The user has provided the following instruction alongside the skill invocation: ';
+    final i = text.lastIndexOf(marker);
+    if (i >= 0) {
+      final rest = text.substring(i + marker.length);
+      final j = rest.indexOf('\n\n[Runtime note:');
+      instruction = (j >= 0 ? rest.substring(0, j) : rest).trim();
+    }
+  }
+  if (name.isEmpty) return instruction;
+  return (instruction == null || instruction.isEmpty) ? label : '$label $instruction';
+}
+
+String _steerText(String text) {
+  final lines = text.split('\n').where((l) {
+    final t = l.trim();
+    return !(t.startsWith('[OUT-OF-BAND') || t.startsWith('[/OUT-OF-BAND'));
+  });
+  return lines.join('\n').trim();
+}
+
+String _toolPreview(Map args) {
+  for (final k in const ['command', 'path', 'file_path', 'query', 'url', 'pattern', 'goal', 'name', 'action', 'image_url', 'urls']) {
+    final v = args[k];
+    if (v == null) continue;
+    final t = (v is List ? v.join(', ') : '$v').split('\n').first.trim();
+    if (t.isNotEmpty) return t.length > 80 ? '${t.substring(0, 79)}…' : t;
+  }
+  final code = args['code'];
+  if (code is String && code.trim().isNotEmpty) {
+    final t = code.trim().split('\n').first;
+    return t.length > 80 ? '${t.substring(0, 79)}…' : t;
+  }
+  return '';
+}
+
+/// Chat items from the REST transcript page (`/api/sessions/{id}/messages`):
+/// raw stored rows, filtered the way the server's resume projection does.
+List<ChatItem> chatItemsFromRest(List<Map<String, dynamic>> rows) {
+  final out = <ChatItem>[];
+  final calls = <String, (String, Map)>{};
+  for (final m in rows) {
+    final role = '${m['role'] ?? ''}';
+    final kind = m['display_kind'] as String?;
+    if (kind == 'hidden' || kind == 'model_switch' || kind == 'auto_continue') continue;
+    if (m['display_content'] != null) continue; // compaction summary
+    final text = _contentText(m['content']);
+    if (role == 'user') {
+      if (kind == 'process_complete' || kind == 'async_delegation_complete') {
+        final meta = m['display_metadata'];
+        final shown = meta is Map ? '${meta['display_text'] ?? ''}'.split('\n').first.trim() : '';
+        if (shown.isNotEmpty) out.add(ChatItem.notice(shown));
+        continue;
+      }
+      if (text.trimLeft().startsWith('[System:') || text.trimLeft().startsWith('[System note:')) continue;
+      final shown = kind == 'steer' ? _steerText(text) : (_skillInvocation(text) ?? text);
+      final (body, files) = splitAttachments(shown);
+      out.add(ChatItem.user(body)..files = files);
+    } else if (role == 'assistant') {
+      for (final tc in (m['tool_calls'] as List? ?? const [])) {
+        if (tc is! Map) continue;
+        final fn = tc['function'];
+        final id = '${tc['id'] ?? ''}';
+        if (fn is! Map || id.isEmpty) continue;
+        Map args = const {};
+        try {
+          final a = fn['arguments'];
+          args = a is Map ? a : (jsonDecode('${a ?? '{}'}') as Map? ?? const {});
+        } catch (_) {}
+        calls[id] = ('${fn['name'] ?? 'tool'}', args);
+      }
+      if (kind == 'failed_turn') {
+        if (text.trim().isNotEmpty) out.add(ChatItem.notice(text.trim()));
+        continue;
+      }
+      if (text.trim().isNotEmpty) out.add(ChatItem.assistant(text));
+    } else if (role == 'tool') {
+      final call = calls['${m['tool_call_id'] ?? ''}'];
+      final name = call?.$1 ?? '${m['tool_name'] ?? 'tool'}';
+      out.add(ChatItem.tool(name, detail: call == null ? '' : _toolPreview(call.$2)));
+    }
+  }
+  return out;
+}
+
+/// The in-flight turn from `session.resume` (`inflight`): the prompt that
+/// started it and the reply streamed so far, so live deltas continue it.
+void appendInflight(List<ChatItem> items, Object? inflight) {
+  if (inflight is! Map) return;
+  final user = '${inflight['user'] ?? ''}'.trim();
+  if (user.isNotEmpty) {
+    final lastUser = items.lastWhere((i) => i.kind == 'user', orElse: () => ChatItem.notice(''));
+    final (body, _) = splitAttachments(_skillInvocation(user) ?? user);
+    if (lastUser.text.trim() != body.trim()) {
+      final (b, files) = splitAttachments(_skillInvocation(user) ?? user);
+      items.add(ChatItem.user(b)..files = files);
+    }
+  }
+  final assistant = '${inflight['assistant'] ?? ''}';
+  if (assistant.trim().isNotEmpty) items.add(ChatItem.assistant(assistant));
 }
