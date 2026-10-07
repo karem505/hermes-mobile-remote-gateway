@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.3.1
+
+Fast, reliable session switching.
+
+### Fixed
+- Opening a session no longer pulls the whole transcript through the WebSocket. `session.resume` is called with `omit_messages` and the transcript comes from the REST page (`/api/sessions/{id}/messages`), as Hermes Desktop does. On a long session this cut a switch from 4-5 s (a ~16 MB reply) to well under a second.
+- Switching back to a session paints its chat immediately from a per-session cache, then reconciles with the server in the background.
+- A slow earlier switch can no longer overwrite the session picked after it.
+- Live events that arrive while a session loads are held and applied after the snapshot instead of being lost.
+- Opening a session that is mid-turn restores the in-flight prompt and partial reply, so streaming continues in place.
+- The running indicator no longer sticks: the active-session poll only corrects it after two consistent readings, ignores the brief post-turn window and the `starting` state of an agent being built, and a turn that finishes in a background session clears its cached running state.
+- Gateways without the REST transcript route fall back to the previous full resume.
+
 ## 1.3.0
 
 Liquid Glass design, tuned for 120 Hz Android displays.
