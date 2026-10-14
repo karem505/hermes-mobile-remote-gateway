@@ -7,6 +7,7 @@ import 'api.dart';
 import 'background.dart';
 import 'design.dart';
 import 'notify.dart';
+import 'l10n.dart';
 
 export 'background.dart';
 
@@ -46,17 +47,17 @@ class PullOffer {
 String _surfaceAr(String? surface) {
   switch ((surface ?? '').trim().toLowerCase()) {
     case 'desktop':
-      return 'سطح المكتب';
+      return L10n.t('سطح المكتب');
     case 'mobile':
-      return 'الجوال';
+      return L10n.t('الجوال');
     case 'tui':
     case 'cli':
-      return 'الطرفية';
+      return L10n.t('الطرفية');
     case 'gateway':
     case 'bot':
-      return 'البوت';
+      return L10n.t('البوت');
     default:
-      return 'جهاز آخر';
+      return L10n.t('جهاز آخر');
   }
 }
 
@@ -180,7 +181,33 @@ class HermesStore extends ChangeNotifier {
   final items = <ChatItem>[];
   bool running = false;
   bool opening = false;
-  String statusText = '';
+  // 状态行不要缓存"已翻译"的文本（切语言后会变成旧语言残影）：
+  // 存 key + 参数，渲染时用当前语言现场翻译；服务端/工具原样文本走 _statusRaw。
+  String _statusKey = '';
+  String _statusArg = '';
+  String _statusRaw = '';
+
+  String get statusText => _statusKey.isNotEmpty
+      ? L10n.t(_statusKey, _statusArg.isEmpty ? null : <Object?>[_statusArg])
+      : _statusRaw;
+
+  set statusText(String value) {
+    _statusKey = '';
+    _statusArg = '';
+    _statusRaw = value;
+  }
+
+  void _status(String key, [String arg = '']) {
+    _statusKey = key;
+    _statusArg = arg;
+    _statusRaw = '';
+  }
+
+  void _statusClear() {
+    _statusKey = '';
+    _statusArg = '';
+    _statusRaw = '';
+  }
   Map<String, dynamic> info = {};
   PendingRequest? pending;
   String? toast;
@@ -188,7 +215,32 @@ class HermesStore extends ChangeNotifier {
   /// A refused draft waiting behind the "pull from the other device" offer.
   PullOffer? pendingPull;
   bool pulling = false;
-  String? pullError;
+  String? _pullKey;
+  List<Object?> _pullArgs = const [];
+  String? _pullRaw;
+
+  String? get pullError => _pullKey != null
+      ? L10n.t(_pullKey!, _pullArgs.isEmpty ? null : _pullArgs)
+      : _pullRaw;
+
+  /// 兼容旧写法：直接给成品文本（原样显示，不参与翻译）。
+  set pullError(String? value) {
+    _pullKey = null;
+    _pullArgs = const [];
+    _pullRaw = value;
+  }
+
+  void _pullSet(String key, [List<Object?> args = const []]) {
+    _pullKey = key;
+    _pullArgs = args;
+    _pullRaw = null;
+  }
+
+  void _pullClear() {
+    _pullKey = null;
+    _pullArgs = const [];
+    _pullRaw = null;
+  }
 
   bool submitting = false;
   final queued = <QueuedTurn>[];
@@ -227,14 +279,15 @@ class HermesStore extends ChangeNotifier {
                 ? s['title'] as String
                 : ((s['preview'] as String?)?.trim().isNotEmpty ?? false)
                     ? (s['preview'] as String).trim()
-                    : 'جلسة بلا عنوان',
+                    // 留空，交给渲染时用当前语言补默认标题（就地本地化会在切语言后变成旧语言的残影）
+                    : '',
             '${s['source'] ?? ''}',
             (s['started_at'] as num?)?.toDouble() ?? 0,
             (s['message_count'] as num?)?.toInt() ?? 0,
           )
       ];
     } catch (e) {
-      _flash('تعذر جلب الجلسات: $e');
+      _flash(L10n.t('تعذر جلب الجلسات: {0}', [e]));
     }
     loadingSessions = false;
     notifyListeners();
@@ -253,7 +306,7 @@ class HermesStore extends ChangeNotifier {
       final seen = out.map((e) => e.name).toSet();
       final skillNames = skills.keys.map((k) => '$k').toList()..sort();
       for (final k in skillNames) {
-        if (!seen.contains(k)) out.add(CommandEntry(k, 'مهارة', 'المهارات'));
+        if (!seen.contains(k)) out.add(CommandEntry(k, L10n.t('مهارة'), L10n.t('المهارات')));
       }
       commands = out;
       notifyListeners();
@@ -275,7 +328,7 @@ class HermesStore extends ChangeNotifier {
       models = out;
       notifyListeners();
     } catch (e) {
-      _flash('تعذر جلب النماذج: $e');
+      _flash(L10n.t('تعذر جلب النماذج: {0}', [e]));
     }
   }
 
@@ -309,7 +362,7 @@ class HermesStore extends ChangeNotifier {
     final key = storedId, id = sid;
     if (key == null || id == null || opening) return;
     _views.remove(key);
-    _views[key] = _SessionView(id, title, List.of(items), running, statusText);
+    _views[key] = _SessionView(id, title, List.of(items), running, _statusKey, _statusArg, _statusRaw);
     while (_views.length > 12) {
       _views.remove(_views.keys.first);
     }
@@ -340,7 +393,9 @@ class HermesStore extends ChangeNotifier {
         ..clear()
         ..addAll(cached.items);
       running = cached.running;
-      statusText = cached.statusText;
+      _statusKey = cached.statusKey;
+      _statusArg = cached.statusArg;
+      _statusRaw = cached.statusRaw;
       opening = false;
     } else {
       title = row.title;
@@ -378,7 +433,11 @@ class HermesStore extends ChangeNotifier {
         ..addAll(next);
       _applyInfo((r['info'] as Map?)?.cast<String, dynamic>());
       running = isRunning;
-      statusText = isRunning ? (statusText.isEmpty ? 'يعمل...' : statusText) : '';
+      if (!isRunning) {
+        _statusClear();
+      } else if (_statusKey.isEmpty && _statusRaw.isEmpty) {
+        _status('يعمل...');
+      }
       _lastEventAt = clock();
       _idleStreak = 0;
       _busyStreak = 0;
@@ -395,7 +454,7 @@ class HermesStore extends ChangeNotifier {
       loadCatalog();
       unawaited(refreshBackground());
     } catch (e) {
-      if (gen == _openGen) _flash('تعذر فتح الجلسة: $e');
+      if (gen == _openGen) _flash(L10n.t('تعذر فتح الجلسة: {0}', [e]));
     } finally {
       if (gen == _openGen) {
         opening = false;
@@ -415,7 +474,8 @@ class HermesStore extends ChangeNotifier {
     items.clear();
     pending = null;
     running = false;
-    title = 'جلسة جديدة';
+    // 同上：不把本地化文案固化进数据，渲染处按当前语言兜底
+    title = '';
     notifyListeners();
     try {
       final r = await gw.call('session.create', {'source': 'mobile'});
@@ -424,7 +484,7 @@ class HermesStore extends ChangeNotifier {
       _applyInfo((r['info'] as Map?)?.cast<String, dynamic>());
       unawaited(refreshBackground());
     } catch (e) {
-      _flash('تعذر إنشاء جلسة: $e');
+      _flash(L10n.t('تعذر إنشاء جلسة: {0}', [e]));
     }
     opening = false;
     notifyListeners();
@@ -447,11 +507,11 @@ class HermesStore extends ChangeNotifier {
     if (submitting || sessionId == null || (text.isEmpty && attachments.isEmpty)) return false;
     final selected = List<Attachment>.of(attachments);
     if (selected.any((a) => a.uploading)) {
-      _flash('انتظر اكتمال رفع المرفقات');
+      _flash(L10n.t('انتظر اكتمال رفع المرفقات'));
       return false;
     }
     if (selected.any((a) => a.sessionId != sessionId)) {
-      _flash('المرفقات تخص جلسة أخرى؛ احذفها وأرفقها هنا مجددًا');
+      _flash(L10n.t('المرفقات تخص جلسة أخرى؛ احذفها وأرفقها هنا مجددًا'));
       return false;
     }
     submitting = true;
@@ -466,7 +526,7 @@ class HermesStore extends ChangeNotifier {
       if (queue) {
         queued.add(QueuedTurn(sessionId, text, selected));
         accepted = true;
-        _flash('في الطابور: ستُرسل بعد انتهاء الدور الحالي');
+        _flash(L10n.t('في الطابور: ستُرسل بعد انتهاء الدور الحالي'));
       } else {
         accepted = await _deliver(sessionId, text, selected, steer: steer);
       }
@@ -490,15 +550,15 @@ class HermesStore extends ChangeNotifier {
     items.add(item);
     if (!steer) {
       running = true;
-      statusText = 'يفكر...';
+      _status('يفكر...');
       _submittedAt = clock();
     }
     notifyListeners();
     try {
       final result = await gw.call(steer ? 'session.steer' : 'prompt.submit',
           {'session_id': sessionId, 'text': payload});
-      if (steer && (result is! Map || result['status'] != 'queued')) throw 'لم يُقبل التوجيه';
-      if (steer && sid == sessionId) _flash('تم التوجيه');
+      if (steer && (result is! Map || result['status'] != 'queued')) throw L10n.t('لم يُقبل التوجيه');
+      if (steer && sid == sessionId) _flash(L10n.t('تم التوجيه'));
       return true;
     } catch (e) {
       items.remove(item);
@@ -513,7 +573,7 @@ class HermesStore extends ChangeNotifier {
           pendingPull = PullOffer(text, sessionId);
           notifyListeners();
         } else {
-          _flash(steer ? 'تعذر التوجيه: $e' : 'تعذر الإرسال: $e');
+          _flash(steer ? L10n.t('تعذر التوجيه: {0}', [e]) : L10n.t('تعذر الإرسال: {0}', [e]));
         }
       }
       return false;
@@ -525,7 +585,7 @@ class HermesStore extends ChangeNotifier {
     final offer = pendingPull;
     if (offer == null || pulling) return;
     pulling = true;
-    pullError = null;
+    _pullClear();
     notifyListeners();
     try {
       final r = await gw.call('session.takeover', {'session_id': offer.sessionId}, const Duration(seconds: 45));
@@ -533,22 +593,25 @@ class HermesStore extends ChangeNotifier {
       pendingPull = null;
       pulling = false;
       notifyListeners();
-      _flash(surface.isEmpty ? 'تم سحب الجلسة إلى الجوال' : 'تم سحب الجلسة من ${_surfaceAr(surface)} إلى الجوال');
+      _flash(surface.isEmpty ? L10n.t('تم سحب الجلسة إلى الجوال') : L10n.t('تم سحب الجلسة من {0} إلى الجوال', [_surfaceAr(surface)]));
       if (sid == offer.sessionId && !running) await _sendDraft(offer.text, steer: false);
     } on RpcError catch (e) {
       pulling = false;
       final holder = e.data is Map ? (e.data as Map)['holder_surface'] as String? : null;
-      pullError = switch (e.reason) {
-        'TAKEOVER_BUSY' =>
-          'الجلسة تعمل الآن على ${_surfaceAr(holder)} ولم ينتهِ دورها بعد؛ أوقف الدور من هناك ثم حاول السحب مرة أخرى.',
-        'TAKEOVER_RACED' => 'بدأت الجلسة دورًا جديدًا على الجهاز الآخر؛ انتظر قليلًا ثم حاول مرة أخرى.',
-        'SESSION_CAP' => 'لا يمكن سحب الجلسة الآن: بلغت حد الجلسات المتزامنة.',
-        _ => 'تعذر سحب الجلسة: $e',
-      };
+      switch (e.reason) {
+        case 'TAKEOVER_BUSY':
+          _pullSet('الجلسة تعمل الآن على {0} ولم ينتهِ دورها بعد؛ أوقف الدور من هناك ثم حاول السحب مرة أخرى.', [_surfaceAr(holder)]);
+        case 'TAKEOVER_RACED':
+          _pullSet('بدأت الجلسة دورًا جديدًا على الجهاز الآخر؛ انتظر قليلًا ثم حاول مرة أخرى.');
+        case 'SESSION_CAP':
+          _pullSet('لا يمكن سحب الجلسة الآن: بلغت حد الجلسات المتزامنة.');
+        default:
+          _pullSet('تعذر سحب الجلسة: {0}', ['$e']);
+      }
       notifyListeners();
     } catch (e) {
       pulling = false;
-      pullError = 'تعذر سحب الجلسة: $e';
+      _pullSet('تعذر سحب الجلسة: {0}', ['$e']);
       notifyListeners();
     }
   }
@@ -556,7 +619,7 @@ class HermesStore extends ChangeNotifier {
   void dismissPull() {
     if (pendingPull == null && pullError == null) return;
     pendingPull = null;
-    pullError = null;
+    _pullClear();
     notifyListeners();
   }
 
@@ -573,7 +636,7 @@ class HermesStore extends ChangeNotifier {
       try {
         r = await gw.call('command.dispatch', {'session_id': sid, 'name': name, 'arg': arg}) as Map?;
       } catch (e) {
-        items.add(ChatItem.notice('تعذر تنفيذ /$name: $e'));
+        items.add(ChatItem.notice(L10n.t('تعذر تنفيذ /{0}: {1}', [name, e])));
         notifyListeners();
         return;
       }
@@ -594,7 +657,7 @@ class HermesStore extends ChangeNotifier {
       return;
     } else {
       final out = '${r?['output'] ?? r?['notice'] ?? ''}'.trim();
-      items.add(ChatItem.notice(out.isEmpty ? '/$name: تم' : out));
+      items.add(ChatItem.notice(out.isEmpty ? L10n.t('/{0}: تم', [name]) : out));
     }
     if (name == 'model' || name == 'reasoning' || name == 'fast' || name == 'yolo') refreshInfo();
     notifyListeners();
@@ -619,7 +682,7 @@ class HermesStore extends ChangeNotifier {
       var r = await gw.call('config.set', params);
       if (sid != target) return false;
       if (r is Map && r['confirm_required'] == true) {
-        final message = '${r['confirm_message'] ?? r['warning'] ?? 'يتطلب تغيير النموذج تأكيدًا.'}';
+        final message = '${r['confirm_message'] ?? r['warning'] ?? L10n.t('يتطلب تغيير النموذج تأكيدًا.')}';
         if (confirm == null) {
           _flash(message);
           return false;
@@ -629,7 +692,7 @@ class HermesStore extends ChangeNotifier {
         r = await gw.call('config.set', {...params, 'confirm_expensive_model': true});
         if (sid != target) return false;
         if (r is Map && r['confirm_required'] == true) {
-          _flash('لم يقبل الخادم تأكيد التغيير. لم يتم تغيير النموذج.');
+          _flash(L10n.t('لم يقبل الخادم تأكيد التغيير. لم يتم تغيير النموذج.'));
           return false;
         }
       }
@@ -646,7 +709,7 @@ class HermesStore extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _flash('تعذر التغيير: $e');
+      _flash(L10n.t('تعذر التغيير: {0}', [e]));
       return false;
     }
   }
@@ -713,14 +776,14 @@ class HermesStore extends ChangeNotifier {
         'data_url': 'data:${_mimeOf(ext)};base64,${base64Encode(a.bytes)}',
         'name': a.name,
       }, const Duration(seconds: 120));
-      if (r is! Map || r['attached'] == false) throw 'رُفض الملف';
+      if (r is! Map || r['attached'] == false) throw L10n.t('رُفض الملف');
       a.path = '${r['path'] ?? ''}';
-      if (a.path.isEmpty) throw 'لم يُرجع الخادم مسار الملف';
+      if (a.path.isEmpty) throw L10n.t('لم يُرجع الخادم مسار الملف');
       a.ref = '@${a.isImage ? 'image' : 'file'}:${_quoteRef(a.path)}';
       a.bytes = const [];
     } catch (e) {
       a.error = '$e';
-      _flash('تعذر إرفاق ${a.name}: $e — أعد الإرسال للمحاولة');
+      _flash(L10n.t('تعذر إرفاق {0}: {1} — أعد الإرسال للمحاولة', [a.name, e]));
     } finally {
       a.uploading = false;
       notifyListeners();
@@ -739,9 +802,9 @@ class HermesStore extends ChangeNotifier {
     if (id == null) return;
     try {
       await gw.call('session.close', {'session_id': id});
-      _flash('أُغلقت الجلسة على الجوال، ويمكن فتحها الآن من سطح المكتب');
+      _flash(L10n.t('أُغلقت الجلسة على الجوال، ويمكن فتحها الآن من سطح المكتب'));
     } catch (e) {
-      _flash('تعذر إغلاق الجلسة: $e');
+      _flash(L10n.t('تعذر إغلاق الجلسة: {0}', [e]));
       return;
     }
     if (storedId != null) _views.remove(storedId);
@@ -773,15 +836,15 @@ class HermesStore extends ChangeNotifier {
     final method = '${msg['method']}';
     final params = Map<String, dynamic>.from(msg['params'] as Map? ?? {});
     if (method != 'approval' && method != 'clarify') {
-      gw.respondError(msg['id'] as Object, 'غير مدعوم في تطبيق الجوال');
+      gw.respondError(msg['id'] as Object, L10n.t('غير مدعوم في تطبيق الجوال'));
       return;
     }
     if (params['session_id'] != null && params['session_id'] != sid) return;
     pending = PendingRequest(msg['id'] as Object, method, params);
     H.attention();
     Notify.i.ask(
-      title: title.isEmpty ? 'جلسة' : title,
-      body: method.contains('approval') ? 'يحتاج إلى موافقتك لتنفيذ أمر' : 'لديه سؤال ينتظر إجابتك',
+      title: title.isEmpty ? L10n.t('جلسة') : title,
+      body: method.contains('approval') ? L10n.t('يحتاج إلى موافقتك لتنفيذ أمر') : L10n.t('لديه سؤال ينتظر إجابتك'),
       session: storedId,
     );
     notifyListeners();
@@ -862,7 +925,7 @@ class HermesStore extends ChangeNotifier {
 
   void _appendOutput(String processId, String chunk) {
     if (processId.isEmpty || chunk.isEmpty || _dismissed.contains(processId)) return;
-    final row = _bgUpsert(processId, 'process', 'عملية في الخلفية');
+    final row = _bgUpsert(processId, 'process', L10n.t('عملية في الخلفية'));
     row.state = BackgroundState.running;
     _linger.remove(processId)?.cancel();
     row.detail = '${row.detail}$chunk';
@@ -925,7 +988,7 @@ class HermesStore extends ChangeNotifier {
       final id = '${s['subagent_id'] ?? ''}';
       if (id.isEmpty || _dismissed.contains(id)) continue;
       final goal = '${s['goal'] ?? ''}'.trim();
-      final row = _bgUpsert(id, 'subagent', goal.isEmpty ? 'مهمة فرعية' : goal);
+      final row = _bgUpsert(id, 'subagent', goal.isEmpty ? L10n.t('مهمة فرعية') : goal);
       if (goal.isNotEmpty) row.title = goal;
       final model = '${s['model'] ?? ''}';
       if (model.isNotEmpty) row.model = model;
@@ -941,7 +1004,7 @@ class HermesStore extends ChangeNotifier {
   void _onSubagentEvent(String type, Map<String, dynamic> p) {
     final id = '${p['subagent_id'] ?? p['delegation_id'] ?? 'sub-${p['task_index'] ?? 0}'}';
     final goal = '${p['goal'] ?? ''}'.trim();
-    final row = _bgUpsert(id, 'subagent', goal.isEmpty ? 'مهمة فرعية' : goal);
+    final row = _bgUpsert(id, 'subagent', goal.isEmpty ? L10n.t('مهمة فرعية') : goal);
     if (goal.isNotEmpty) row.title = goal;
     final model = '${p['model'] ?? ''}';
     if (model.isNotEmpty) row.model = model;
@@ -972,7 +1035,7 @@ class HermesStore extends ChangeNotifier {
         if (subagent) 'subagent_id': id else 'process_id': id,
       });
     } catch (e) {
-      _flash(subagent ? 'تعذر إيقاف المهمة الفرعية: $e' : 'تعذر إيقاف العملية: $e');
+      _flash(subagent ? L10n.t('تعذر إيقاف المهمة الفرعية: {0}', [e]) : L10n.t('تعذر إيقاف العملية: {0}', [e]));
       return;
     }
     dismissBackground(id);
@@ -1014,7 +1077,7 @@ class HermesStore extends ChangeNotifier {
       if (now.difference(_turnEndedAt) > const Duration(seconds: 8) && ++_busyStreak >= 2) {
         _busyStreak = 0;
         running = true;
-        if (statusText.isEmpty) statusText = 'يعمل...';
+        if (statusText.isEmpty) _status('يعمل...');
       }
     } else if (idle && running) {
       _busyStreak = 0;
@@ -1071,7 +1134,7 @@ class HermesStore extends ChangeNotifier {
         for (final v in _views.values) {
           if (v.sid == e['session_id']) {
             v.running = false;
-            v.statusText = '';
+            v.clearStatus();
           }
         }
       }
@@ -1092,7 +1155,7 @@ class HermesStore extends ChangeNotifier {
       case 'background.complete':
         final id = '${payload['task_id'] ?? ''}';
         if (id.isNotEmpty) {
-          final row = _bgUpsert(id, 'agent', 'مهمة خلفية');
+          final row = _bgUpsert(id, 'agent', L10n.t('مهمة خلفية'));
           row.state = BackgroundState.done;
           final text = '${payload['text'] ?? ''}'.trim();
           if (text.isNotEmpty) row.detail = text;
@@ -1100,7 +1163,7 @@ class HermesStore extends ChangeNotifier {
         }
       case 'message.start':
         running = true;
-        statusText = 'يفكر...';
+        _status('يفكر...');
         items.add(ChatItem.assistant(''));
       case 'thinking.delta':
         // Spinner rewrites ("(◔_◔) ruminating...") and provider-wait notices,
@@ -1111,7 +1174,7 @@ class HermesStore extends ChangeNotifier {
         if (t.isNotEmpty) statusText = t;
       case 'reasoning.delta':
         running = true;
-        statusText = 'يفكر...';
+        _status('يفكر...');
         final t = '${payload['text'] ?? ''}';
         final last = items.isNotEmpty ? items.last : null;
         if (last != null && last.kind == 'thinking' && !last.done) {
@@ -1137,7 +1200,7 @@ class HermesStore extends ChangeNotifier {
         }
       case 'message.delta':
         _closeThinking();
-        statusText = 'يكتب الرد...';
+        _status('يكتب الرد...');
         final t = '${payload['text'] ?? ''}';
         final target = _streamTarget();
         if (target == null) {
@@ -1162,12 +1225,12 @@ class HermesStore extends ChangeNotifier {
         if (queued.isEmpty) {
           H.success();
           final last = items.lastWhere((i) => i.kind == 'assistant', orElse: () => ChatItem.assistant(''));
-          Notify.i.done(title: title.isEmpty ? 'جلسة' : title, body: last.text, session: storedId);
+          Notify.i.done(title: title.isEmpty ? L10n.t('جلسة') : title, body: last.text, session: storedId);
         }
         _drainQueue();
       case 'tool.start':
         _closeThinking();
-        statusText = 'ينفّذ ${payload['name'] ?? 'أداة'}...';
+        _status('ينفّذ {0}...', '${payload['name'] ?? L10n.t('أداة')}');
         final ctx = '${payload['context'] ?? payload['preview'] ?? ''}';
         final target = _streamTarget();
         if (target != null && target.text.trim().isEmpty) items.removeLast();
@@ -1200,7 +1263,9 @@ class HermesStore extends ChangeNotifier {
           running = false;
           statusText = '';
           items.add(ChatItem.notice(
-              'سُحبت هذه الجلسة إلى ${_surfaceAr('${payload['by'] ?? ''}')}؛ لإكمال العمل من الجوال اسحبها من جديد عند الإرسال.'));
+              L10n.t(
+                  'سُحبت هذه الجلسة إلى {0}؛ لإكمال العمل من الجوال اسحبها من جديد عند الإرسال.',
+                  [_surfaceAr('${payload['by'] ?? ''}')])));
         } else {
           return;
         }
@@ -1209,10 +1274,10 @@ class HermesStore extends ChangeNotifier {
         running = false;
         _turnEndedAt = clock();
         _drainQueue();
-        final msg = '${payload['message'] ?? 'خطأ'}';
+        final msg = '${payload['message'] ?? L10n.t('خطأ')}';
         items.add(ChatItem.notice(msg));
         H.error();
-        Notify.i.done(title: title.isEmpty ? 'جلسة' : title, body: msg, session: storedId, failed: true);
+        Notify.i.done(title: title.isEmpty ? L10n.t('جلسة') : title, body: msg, session: storedId, failed: true);
       default:
         return;
     }
@@ -1274,7 +1339,7 @@ String _quoteRef(String path) {
   for (final quote in ['`', '"', "'"]) {
     if (!path.contains(quote)) return '$quote$path$quote';
   }
-  throw 'اسم الملف يحتوي على علامات اقتباس غير مدعومة';
+  throw L10n.t('اسم الملف يحتوي على علامات اقتباس غير مدعومة');
 }
 
 String _mimeOf(String ext) => switch (ext) {
@@ -1306,12 +1371,24 @@ final _attachToken = RegExp(r'''@(?:image|file):(?:`([^`\n]+)`|"([^"\n]+)"|'([^'
 
 /// A session's rendered chat kept across switches.
 class _SessionView {
-  _SessionView(this.sid, this.title, this.items, this.running, this.statusText);
+  _SessionView(this.sid, this.title, this.items, this.running, this.statusKey, this.statusArg, this.statusRaw);
+
+  String get statusText => statusKey.isNotEmpty
+      ? L10n.t(statusKey, statusArg.isEmpty ? null : <Object?>[statusArg])
+      : statusRaw;
+
+  void clearStatus() {
+    statusKey = '';
+    statusArg = '';
+    statusRaw = '';
+  }
   final String sid;
   final String title;
   final List<ChatItem> items;
   bool running;
-  String statusText;
+  String statusKey;
+  String statusArg;
+  String statusRaw;
 }
 
 /// Chat items from `session.resume`'s server-projected `messages`.

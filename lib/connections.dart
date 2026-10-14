@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'l10n.dart';
 
 /// One saved gateway (server) the app can talk to.
 class Conn {
@@ -176,6 +177,6 @@ class Connections {
 
   static String defaultName(String url) {
     final h = Uri.tryParse(url)?.host ?? '';
-    return h.isEmpty ? 'بوابة' : h;
+    return h.isEmpty ? L10n.t('بوابة') : h;
   }
 }

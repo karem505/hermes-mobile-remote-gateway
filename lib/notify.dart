@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'l10n.dart';
 
 /// Local "agent finished" notifications, only while the app is backgrounded.
 class Notify with WidgetsBindingObserver {
@@ -13,20 +14,20 @@ class Notify with WidgetsBindingObserver {
   /// Row id of the session whose notification was tapped; the home screen opens it.
   final ValueNotifier<String?> tapped = ValueNotifier(null);
 
-  static const _done = AndroidNotificationDetails(
+  static AndroidNotificationDetails get _done => AndroidNotificationDetails(
     'agent_done',
-    'انتهاء المهام',
-    channelDescription: 'تنبيه عند انتهاء الوكيل من مهمته والتطبيق في الخلفية',
+    L10n.t('انتهاء المهام'),
+    channelDescription: L10n.t('تنبيه عند انتهاء الوكيل من مهمته والتطبيق في الخلفية'),
     importance: Importance.high,
     priority: Priority.high,
     color: Color(0xFFD97757),
     enableVibration: true,
     styleInformation: BigTextStyleInformation(''),
   );
-  static const _ask = AndroidNotificationDetails(
+  static AndroidNotificationDetails get _ask => AndroidNotificationDetails(
     'agent_ask',
-    'طلبات الموافقة',
-    channelDescription: 'تنبيه عندما يحتاج الوكيل إلى موافقتك أو إجابتك',
+    L10n.t('طلبات الموافقة'),
+    channelDescription: L10n.t('تنبيه عندما يحتاج الوكيل إلى موافقتك أو إجابتك'),
     importance: Importance.max,
     priority: Priority.max,
     color: Color(0xFFD97757),
@@ -61,8 +62,8 @@ class Notify with WidgetsBindingObserver {
     final short = text.length > 180 ? '${text.substring(0, 180)}...' : text;
     await _p.show(
       (session ?? 'x').hashCode & 0x7fffffff,
-      failed ? 'توقف Hermes: $title' : 'انتهى Hermes: $title',
-      short.isEmpty ? 'اكتملت المهمة' : short,
+      failed ? L10n.t('توقف Hermes: {0}', [title]) : L10n.t('انتهى Hermes: {0}', [title]),
+      short.isEmpty ? L10n.t('اكتملت المهمة') : short,
       NotificationDetails(
         android: AndroidNotificationDetails(
           _done.channelId,
@@ -71,7 +72,7 @@ class Notify with WidgetsBindingObserver {
           importance: _done.importance,
           priority: _done.priority,
           color: _done.color,
-          styleInformation: BigTextStyleInformation(short.isEmpty ? 'اكتملت المهمة' : short),
+          styleInformation: BigTextStyleInformation(short.isEmpty ? L10n.t('اكتملت المهمة') : short),
         ),
       ),
       payload: session,
@@ -82,9 +83,9 @@ class Notify with WidgetsBindingObserver {
     if (!_ready || !background) return;
     await _p.show(
       ((session ?? 'x').hashCode + 1) & 0x7fffffff,
-      'Hermes ينتظرك: $title',
+      L10n.t('Hermes ينتظرك: {0}', [title]),
       body,
-      const NotificationDetails(android: _ask),
+      NotificationDetails(android: _ask),
       payload: session,
     );
   }

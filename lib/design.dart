@@ -6,6 +6,7 @@ import 'package:tabler_icons_next/tabler_icons_next.dart' as tb;
 
 import 'background.dart';
 import 'glass.dart';
+import 'l10n.dart';
 
 /// Design tokens: a warm, Claude-Code-flavoured dark surface with soft depth.
 class D {
@@ -108,8 +109,9 @@ TextDirection dDirOf(String s) {
   for (final r in s.runes) {
     if (r >= 0x0600 && r <= 0x06FF) return TextDirection.rtl;
     if ((r >= 0x41 && r <= 0x5A) || (r >= 0x61 && r <= 0x7A)) return TextDirection.ltr;
+    if (r >= 0x2E80 && r <= 0x9FFF) return TextDirection.ltr;
   }
-  return TextDirection.rtl;
+  return L10n.isRtl ? TextDirection.rtl : TextDirection.ltr;
 }
 
 typedef IconCtor = Widget Function({Color? color, double? width, double? height});
@@ -617,7 +619,7 @@ class DDialog extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(child: Semantics(namesRoute: true, header: true,
                 child: Text(title, style: txt(17, weight: FontWeight.w700, height: 1.35)))),
-              DIconBtn(icon: tb.X.new, size: 36, tooltip: 'إغلاق',
+              DIconBtn(icon: tb.X.new, size: 36, tooltip: L10n.t('إغلاق'),
                 onPressed: () => Navigator.of(context).maybePop()),
             ]),
             const SizedBox(height: 14),
@@ -642,8 +644,8 @@ class DDialog extends StatelessWidget {
 /// Non-blocking feedback, used by copy, uploads, configuration and errors.
 class DFeedback {
   static void show(BuildContext context, String message, {DNoticeKind? kind}) {
-    final tone = kind ?? (message.startsWith('تعذر') || message.startsWith('فشل')
-        ? DNoticeKind.error : message.startsWith('تم ') ? DNoticeKind.success : DNoticeKind.info);
+    final tone = kind ?? (message.startsWith(L10n.t('تعذر')) || message.startsWith(L10n.t('فشل'))
+        ? DNoticeKind.error : message.startsWith(L10n.t('تم ')) ? DNoticeKind.success : DNoticeKind.info);
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
     messenger.hideCurrentSnackBar();
@@ -871,7 +873,7 @@ class DCodeBlock extends StatelessWidget {
             child: Row(children: [
               Expanded(child: Text(lang, style: txt(11.5, color: D.faint, weight: FontWeight.w600, height: 1.2))),
               Tooltip(
-                message: 'نسخ',
+                message: L10n.t('نسخ'),
                 child: DPress(
                   onTap: onCopy,
                   haptic: Hx.select,
@@ -883,7 +885,7 @@ class DCodeBlock extends StatelessWidget {
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         ic(tb.Copy.new, size: 14, color: D.muted),
                         const SizedBox(width: 5),
-                        Text('Copy', style: txt(11.5, color: D.muted, weight: FontWeight.w500, height: 1.2)),
+                        Text(L10n.t('نسخ'), style: txt(11.5, color: D.muted, weight: FontWeight.w500, height: 1.2)),
                       ]),
                     ),
                   ),
@@ -1323,7 +1325,7 @@ class _BackgroundStripState extends State<BackgroundStrip> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'النشاط في الخلفية (${items.length})',
+                  L10n.t('النشاط في الخلفية ({0})', [items.length]),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: txt(12.5, weight: FontWeight.w600),
@@ -1332,12 +1334,12 @@ class _BackgroundStripState extends State<BackgroundStrip> {
               if (live > 0)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(end: 6),
-                  child: Text('$live قيد التشغيل', style: txt(11.5, color: D.accent)),
+                  child: Text(L10n.t('{0} قيد التشغيل', [live]), style: txt(11.5, color: D.accent)),
                 )
               else if (items.any((i) => i.state == BackgroundState.failed))
                 Padding(
                   padding: const EdgeInsetsDirectional.only(end: 6),
-                  child: Text('يوجد فشل', style: txt(11.5, color: D.danger)),
+                  child: Text(L10n.t('يوجد فشل'), style: txt(11.5, color: D.danger)),
                 ),
               const SizedBox(width: 4),
                 AnimatedRotation(
@@ -1389,9 +1391,9 @@ class _BackgroundRow extends StatelessWidget {
   final VoidCallback onDismiss;
 
   String get _status => switch (item.state) {
-        BackgroundState.running => item.kind == 'subagent' ? 'يعمل الآن' : 'قيد التشغيل',
-        BackgroundState.done => 'انتهى',
-        BackgroundState.failed => item.exitCode == null ? 'فشل' : 'فشل (رمز ${item.exitCode})',
+        BackgroundState.running => item.kind == 'subagent' ? L10n.t('يعمل الآن') : L10n.t('قيد التشغيل'),
+        BackgroundState.done => L10n.t('انتهى'),
+        BackgroundState.failed => item.exitCode == null ? L10n.t('فشل') : L10n.t('فشل (رمز {0})', [item.exitCode]),
       };
 
   Color get _tone => switch (item.state) {
@@ -1417,7 +1419,7 @@ class _BackgroundRow extends StatelessWidget {
         _status,
         if (item.subtitle.isNotEmpty && item.running) item.subtitle,
         if (item.model != null && item.model!.isNotEmpty) item.model!,
-        if (item.toolCount != null && item.toolCount! > 0) 'أدوات: ${item.toolCount}',
+        if (item.toolCount != null && item.toolCount! > 0) L10n.t('أدوات: {0}', [item.toolCount]),
       ].join(' · ');
 
   @override
@@ -1471,7 +1473,7 @@ class _BackgroundRow extends StatelessWidget {
                   DIconBtn(
                     icon: tb.PlayerStop.new,
                     size: 36,
-                    tooltip: 'إيقاف',
+                    tooltip: L10n.t('إيقاف'),
                     tint: D.danger,
                     onPressed: onStop,
                   )
@@ -1479,7 +1481,7 @@ class _BackgroundRow extends StatelessWidget {
                   DIconBtn(
                     icon: tb.X.new,
                     size: 36,
-                    tooltip: 'تجاهل',
+                    tooltip: L10n.t('تجاهل'),
                     onPressed: onDismiss,
                   ),
                 ]),
