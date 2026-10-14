@@ -788,7 +788,13 @@ class HermesStore extends ChangeNotifier {
   }
 
   ChatItem? _streamTarget() {
-    if (items.isNotEmpty && items.last.kind == 'assistant') return items.last;
+    // 本轮（最后一条 user 之后）里最后一条 assistant 气泡。
+    // 只认 items.last 是不够的：回复流到一半若插入了工具行/思考块，
+    // message.complete 会找不到目标、于是又追加一条 —— 屏幕上就成了"同一段文字出现两次"。
+    for (final it in items.reversed) {
+      if (it.kind == 'user') return null;
+      if (it.kind == 'assistant') return it;
+    }
     return null;
   }
 
@@ -1130,8 +1136,9 @@ class HermesStore extends ChangeNotifier {
         if (t.isEmpty || _turnHasThinking()) break;
         final block = ChatItem.thinking(t)..done = true;
         final target = _streamTarget();
-        if (target != null) {
-          items.insert(items.length - 1, block);
+        final at = target == null ? -1 : items.indexOf(target);
+        if (at >= 0) {
+          items.insert(at, block);
         } else {
           items.add(block);
         }
