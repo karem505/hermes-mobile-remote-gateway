@@ -65,6 +65,19 @@ Start with [Tailscale setup](docs/TAILSCALE.md), including MagicDNS, authenticat
 
 The app can also store **multiple gateways** — for example your tailnet host plus a public HTTPS deployment — and switch between them with one tap from the gateways screen. Each gateway keeps its own credentials in the platform keychain. A public HTTPS gateway does not need Tailscale on the phone at all.
 
+## Server plugin (session pull)
+
+Pulling a session that is open on another device needs the `session.takeover` method on the
+Hermes host. It ships as a Hermes plugin in [`server-plugin/mobile-session-takeover`](server-plugin/mobile-session-takeover/README.md), outside the Hermes checkout, so `hermes update` cannot remove it:
+
+```sh
+cp -r server-plugin/mobile-session-takeover ~/.hermes/plugins/
+hermes plugins enable mobile-session-takeover
+systemctl --user restart hermes-serve.service   # restart each backend that may hold sessions
+```
+
+Without it the app works normally; only **Pull to mobile** is refused (`unknown method: session.takeover`).
+
 ## Desktop plugin (session pull)
 
 The session-pull feature pairs with a single-file Hermes desktop plugin. To install it, copy the folder from this repository into your desktop plugins directory:
@@ -81,7 +94,7 @@ Restart the Hermes desktop app once. The command palette (`Cmd+K`) then gains **
 - Android **7.0+ (API 24+)**, ARM64. Minimum API verified from the release APK manifest; real-device testing was on Android 16, not every supported OS version.
 - A reachable Hermes Agent installation with `hermes serve`, password authentication, `/api/auth/ws-ticket` and `/api/ws`.
 - Tailscale on both devices, with an access policy allowing the selected gateway port.
-- For the session-pull feature: a gateway that exposes `session.takeover`. Without it the app still works; the pull is simply refused with a clear message.
+- For the session-pull feature: the `mobile-session-takeover` server plugin on the Hermes host (see above). Without it the app still works; the pull is simply refused.
 - A model/provider configured on the Hermes host.
 - Tested development environment: Flutter **3.47.5**, Dart **3.13.4**, JDK **17**.
 - Backend development baseline: Hermes source revision `c07501ec411b5364e5b12b7258c25a6a4c758545`. Compatibility with every upstream release is not guaranteed; check `hermes serve --help` and the [official docs](https://hermes-agent.nousresearch.com/docs/).
@@ -91,7 +104,7 @@ Restart the Hermes desktop app once. The command palette (`Cmd+K`) then gains **
 - This is an early community release. Arabic RTL is the current app UI; English app localization is not implemented.
 - Background notifications are **local Android notifications**, not FCM/cloud push. Force-stop, reboot, OEM battery restrictions or a disconnected VPN can interrupt delivery.
 - A short real-device background test observed the same running process, a foreground service and a completion notification. It does not prove hours-long Doze reliability.
-- Session pull requires both surfaces on the **same backend/profile** with `session.takeover` support; a separate Desktop backend is not automatically synchronized.
+- Session pull works across backend processes of the **same Hermes home/profile** (for example the phone's `hermes serve` and the desktop app's own backend). Each backend that may hold a session must run the server plugin to release it cooperatively; otherwise it is only released once it is idle.
 - Files are processed by your host and its selected model/tools. Review your provider's data policy; not all models can interpret images.
 - The app permits HTTP for private-tailnet deployments. Do not send credentials over an untrusted plain-HTTP LAN or public endpoint; use tailnet-only HTTPS where possible.
 

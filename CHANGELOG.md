@@ -1,5 +1,9 @@
 # Changelog
 
+## Server plugin 1.0
+
+- **Fixed:** "Pull to mobile" failing with `unknown method: session.takeover` after `hermes update`. The backend half used to be local edits inside the Hermes checkout, and the updater stashes those and does not re-apply them. It now ships as a standalone Hermes plugin, [`server-plugin/mobile-session-takeover`](server-plugin/mobile-session-takeover/README.md), which lives outside the checkout. Same behaviour: cooperative release by the holding backend, refusals with `TAKEOVER_BUSY` and `TAKEOVER_RACED`, and a guarded fallback for holders that predate the watcher. The app does not change.
+
 ## 1.3.1
 
 Fast, reliable session switching.
@@ -37,7 +41,7 @@ Two cross-device features on top of 1.1.0.
 ### Pull a session between devices
 - A send refused because another device owns the session (`SESSION_NOT_OWNED`) now offers to pull it: a dialog explains the session is open elsewhere and pulls it to the phone on request, then re-sends the same draft automatically once ownership moved.
 - The draft is restored to the composer on refusal, so nothing typed is lost.
-- The backend half (`session.takeover` RPC + `session.taken_over` event + cross-surface lease transfer) lands in the gateway; a desktop plugin contributes "اسحب الجلسة إلى هذا الجهاز" to the command palette and toasts when a session is pulled away from that window.
+- The backend half (`session.takeover` RPC + `session.taken_over` event + cross-surface lease transfer) runs on the gateway host (now the `mobile-session-takeover` server plugin); a desktop plugin contributes "اسحب الجلسة إلى هذا الجهاز" to the command palette and toasts when a session is pulled away from that window.
 - While a turn is actively running on the other surface the pull waits or refuses (`TAKEOVER_BUSY`) instead of corrupting the running turn.
 
 ### Saved gateways (البوابات والاتصال)

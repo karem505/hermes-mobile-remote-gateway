@@ -1,0 +1,3 @@
+name: mobile-session-takeover
+version: "1.0"
+description: session.takeover RPC + release watcher for Hermes Mobile "Pull to mobile" (survives hermes update)
