@@ -2,6 +2,10 @@
 
 <a href="https://github.com/sponsors/karem505"><img src="https://img.shields.io/badge/Sponsor%20this%20project-ea4aaa?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor this project on GitHub Sponsors" height="40"></a>
 
+**Sponsorship goal: 10 monthly sponsors.** That funds one fixed day every month for Hermes Mobile releases and keeping up with new Hermes Agent versions.
+
+<a href="https://github.com/sponsors/karem505"><img src="https://img.shields.io/github/sponsors/karem505?label=sponsors%20so%20far&style=for-the-badge&color=ea4aaa&logo=githubsponsors&logoColor=white" alt="Number of GitHub sponsors"></a>
+
 **Your self-hosted Hermes Agent, on your Android phone.** An independent Flutter client for streaming conversations, session management, model selection, attachments, steering and queued follow-ups over a private **Tailscale** connection.
 
 <a href="https://github.com/karem505/hermes-mobile-remote-gateway/releases/latest/download/hermes-mobile-android-arm64.apk"><img src="docs/assets/download-apk.svg" alt="Download the latest Hermes Mobile Android APK directly" width="300"></a>
