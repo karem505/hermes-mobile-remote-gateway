@@ -55,6 +55,16 @@ class HermesApplication : Application() {
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         result.success(null)
                     }
+                    "openUrl" -> {
+                        val url = call.argument<String>("url")
+                        if (url == null || !url.startsWith("https://")) {
+                            result.error("bad_url", "only https URLs are allowed", null)
+                        } else {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                            result.success(null)
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) {

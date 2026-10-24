@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2
+
+### Added
+- "ادعم المشروع" (Support the project) in the drawer footer opens the project's GitHub Sponsors page (https://github.com/sponsors/karem505) in the browser. Links open through a small native `openUrl` channel that accepts https URLs only; no new dependency.
+
 ## Server plugin 1.0
 
 - **Fixed:** "Pull to mobile" failing with `unknown method: session.takeover` after `hermes update`. The backend half used to be local edits inside the Hermes checkout, and the updater stashes those and does not re-apply them. It now ships as a standalone Hermes plugin, [`server-plugin/mobile-session-takeover`](server-plugin/mobile-session-takeover/README.md), which lives outside the checkout. Same behaviour: cooperative release by the holding backend, refusals with `TAKEOVER_BUSY` and `TAKEOVER_RACED`, and a guarded fallback for holders that predate the watcher. The app does not change.

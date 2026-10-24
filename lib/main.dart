@@ -17,6 +17,7 @@ import 'api.dart';
 import 'connections.dart';
 import 'design.dart';
 import 'glass.dart';
+import 'links.dart';
 import 'notify.dart';
 import 'background_connection.dart';
 import 'store.dart';
@@ -1091,6 +1092,7 @@ class _SessionsDrawerState extends State<SessionsDrawer> {
             if (widget.onConnections != null)
               footerBtn(tb.Server2.new, 'البوابات والاتصال', widget.onConnections!, value: _connName),
             if (widget.onBackground != null) footerBtn(tb.Bolt.new, 'الاتصال في الخلفية', widget.onBackground!),
+            footerBtn(tb.Heart.new, 'ادعم المشروع', () => openExternalUrl(kSponsorUrl), value: 'GitHub Sponsors'),
             Row(children: [
               Expanded(child: footerBtn(tb.Logout.new, 'تسجيل الخروج', confirmLogout)),
               const BioToggle(),
