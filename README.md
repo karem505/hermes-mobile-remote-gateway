@@ -21,9 +21,10 @@
 
 ## Screenshots
 
-Real captures of the 1.3.0 Liquid Glass design from an Android phone, not mockups. Private session titles, the gateway host and the status bar are removed; original unredacted captures are not published. The app UI is English since 1.4.0 (layout still right-to-left); message content keeps its own direction, so Arabic renders right-to-left in chat. The captures below predate 1.4.0 and show the earlier Arabic UI. Repository documentation is in English.
+Real captures of the 1.4.0 build from an Android phone, not mockups. Private session titles, the gateway host and the status bar are removed; original unredacted captures are not published. The app UI is English since 1.4.0 (layout still right-to-left); message content keeps its own direction, so Arabic renders right-to-left in chat. Repository documentation is in English.
 
 <p>
+  <img src="docs/screenshots/bots.png" alt="Hermes Android Bot View: bot avatars with Working and Idle status, titles and last messages blurred" width="245">
   <img src="docs/screenshots/chat.png" alt="Hermes Agent Android chat with a real demo response under the floating glass top bar and composer" width="245">
   <img src="docs/screenshots/models.png" alt="Glass model sheet with English Thinking levels and the selected model checked" width="245">
   <img src="docs/screenshots/sessions.png" alt="Hermes Android session manager with private session titles blurred" width="245">
