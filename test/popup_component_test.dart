@@ -11,15 +11,15 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: MediaQuery(
       data: const MediaQueryData(size: Size(320, 560), textScaler: TextScaler.linear(1.3)),
       child: Directionality(textDirection: TextDirection.rtl,
-        child: Scaffold(body: DDialog(title: 'تأكيد تغيير النموذج',
+        child: Scaffold(body: DDialog(title: 'Confirm model change',
           body: List.filled(30, 'هذه رسالة تحذير طويلة عن سعة السياق وتكلفة تغيير النموذج.').join('\n'),
-          actions: [DBtn(label: 'إلغاء', onPressed: () {}), DBtn(label: 'تغيير النموذج', onPressed: () {})],
+          actions: [DBtn(label: 'Cancel', onPressed: () {}), DBtn(label: 'Change model', onPressed: () {})],
         )),
       ),
     )));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(tester.getRect(find.text('تغيير النموذج')).bottom, lessThan(560));
+    expect(tester.getRect(find.text('Change model')).bottom, lessThan(560));
     expect(find.byType(SingleChildScrollView), findsOneWidget);
   });
 }

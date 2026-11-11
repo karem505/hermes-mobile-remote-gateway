@@ -21,7 +21,7 @@
 
 ## Screenshots
 
-Real captures of the 1.3.0 Liquid Glass design from an Android phone, not mockups. Private session titles, the gateway host and the status bar are removed; original unredacted captures are not published. The app currently uses **Arabic RTL UI**, with model names and Thinking levels in English. Repository documentation is in English.
+Real captures of the 1.3.0 Liquid Glass design from an Android phone, not mockups. Private session titles, the gateway host and the status bar are removed; original unredacted captures are not published. The app UI is English since 1.4.0 (layout still right-to-left); message content keeps its own direction, so Arabic renders right-to-left in chat. The captures below predate 1.4.0 and show the earlier Arabic UI. Repository documentation is in English.
 
 <p>
   <img src="docs/screenshots/chat.png" alt="Hermes Agent Android chat with a real demo response under the floating glass top bar and composer" width="245">
@@ -33,6 +33,7 @@ Real captures of the 1.3.0 Liquid Glass design from an Android phone, not mockup
 
 - **Liquid Glass design:** the top bar and composer float as glass over the transcript, with spring presses and materializing dialogs, tuned to scroll near 120 Hz on Android.
 - **Chat with your own agent:** streaming text, reasoning sections and tool activity.
+- **Bot View:** the *Bots* tab lists your Hermes profiles with avatar, title and last message; tap one to chat in its canonical Bot Chat.
 - **Manage sessions:** create, search, reopen and close sessions on the connected server.
 - **Pull a session between devices:** if a session is already open on another device, the app offers to pull it here and re-sends your draft instead of refusing to work. A companion desktop plugin (see below) pulls in the other direction.
 - **Choose models:** searchable model picker, English Thinking levels and explicit confirmation when the server warns about a context-sensitive or expensive switch.
@@ -107,7 +108,7 @@ Restart the Hermes desktop app once. The command palette (`Cmd+K`) then gains **
 
 ## Current limits
 
-- This is an early community release. Arabic RTL is the current app UI; English app localization is not implemented.
+- This is an early community release. The app UI is English only; there is no other app localization.
 - Background notifications are **local Android notifications**, not FCM/cloud push. Force-stop, reboot, OEM battery restrictions or a disconnected VPN can interrupt delivery.
 - A short real-device background test observed the same running process, a foreground service and a completion notification. It does not prove hours-long Doze reliability.
 - Session pull works across backend processes of the **same Hermes home/profile** (for example the phone's `hermes serve` and the desktop app's own backend). Each backend that may hold a session must run the server plugin to release it cooperatively; otherwise it is only released once it is idle.

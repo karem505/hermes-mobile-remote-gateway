@@ -15,8 +15,8 @@ class Notify with WidgetsBindingObserver {
 
   static const _done = AndroidNotificationDetails(
     'agent_done',
-    'انتهاء المهام',
-    channelDescription: 'تنبيه عند انتهاء الوكيل من مهمته والتطبيق في الخلفية',
+    'Task completion',
+    channelDescription: 'Alert when the agent finishes a task while the app is in the background',
     importance: Importance.high,
     priority: Priority.high,
     color: Color(0xFFD97757),
@@ -25,8 +25,8 @@ class Notify with WidgetsBindingObserver {
   );
   static const _ask = AndroidNotificationDetails(
     'agent_ask',
-    'طلبات الموافقة',
-    channelDescription: 'تنبيه عندما يحتاج الوكيل إلى موافقتك أو إجابتك',
+    'Approval requests',
+    channelDescription: 'Alert when the agent needs your approval or an answer',
     importance: Importance.max,
     priority: Priority.max,
     color: Color(0xFFD97757),
@@ -61,8 +61,8 @@ class Notify with WidgetsBindingObserver {
     final short = text.length > 180 ? '${text.substring(0, 180)}...' : text;
     await _p.show(
       (session ?? 'x').hashCode & 0x7fffffff,
-      failed ? 'توقف Hermes: $title' : 'انتهى Hermes: $title',
-      short.isEmpty ? 'اكتملت المهمة' : short,
+      failed ? 'Hermes stopped: $title' : 'Hermes finished: $title',
+      short.isEmpty ? 'Task completed' : short,
       NotificationDetails(
         android: AndroidNotificationDetails(
           _done.channelId,
@@ -71,7 +71,7 @@ class Notify with WidgetsBindingObserver {
           importance: _done.importance,
           priority: _done.priority,
           color: _done.color,
-          styleInformation: BigTextStyleInformation(short.isEmpty ? 'اكتملت المهمة' : short),
+          styleInformation: BigTextStyleInformation(short.isEmpty ? 'Task completed' : short),
         ),
       ),
       payload: session,
@@ -82,7 +82,7 @@ class Notify with WidgetsBindingObserver {
     if (!_ready || !background) return;
     await _p.show(
       ((session ?? 'x').hashCode + 1) & 0x7fffffff,
-      'Hermes ينتظرك: $title',
+      'Hermes is waiting for you: $title',
       body,
       const NotificationDetails(android: _ask),
       payload: session,

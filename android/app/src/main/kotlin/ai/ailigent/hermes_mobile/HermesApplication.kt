@@ -5,7 +5,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
-import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Handler
@@ -54,16 +53,6 @@ class HermesApplication : Application() {
                         startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         result.success(null)
-                    }
-                    "openUrl" -> {
-                        val url = call.argument<String>("url")
-                        if (url == null || !url.startsWith("https://")) {
-                            result.error("bad_url", "only https URLs are allowed", null)
-                        } else {
-                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                            result.success(null)
-                        }
                     }
                     else -> result.notImplemented()
                 }

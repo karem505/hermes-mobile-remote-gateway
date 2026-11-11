@@ -319,7 +319,7 @@ class DBtn extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
         if (icon != null) ic(icon!, size: dense ? 14 : 16, color: fg),
         if (icon != null) const SizedBox(width: 6),
-        Flexible(child: Text(label, textAlign: TextAlign.center, style: txt(dense ? 12.5 : 14, color: fg, weight: FontWeight.w600))),
+        Flexible(child: Text(label, textDirection: dDirOf(label), textAlign: TextAlign.center, style: txt(dense ? 12.5 : 14, color: fg, weight: FontWeight.w600))),
       ]),
     );
     return LayoutBuilder(builder: (context, box) {
@@ -558,7 +558,7 @@ class DSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 20, 12, 6),
       child: Row(children: [
         Expanded(
-          child: Text(title, style: txt(12, color: D.faint, weight: FontWeight.w600, height: 1.3)),
+          child: Text(title, textDirection: dDirOf(title), style: txt(12, color: D.faint, weight: FontWeight.w600, height: 1.3)),
         ),
         ?trailing,
       ]),
@@ -616,8 +616,8 @@ class DDialog extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(child: Semantics(namesRoute: true, header: true,
-                child: Text(title, style: txt(17, weight: FontWeight.w700, height: 1.35)))),
-              DIconBtn(icon: tb.X.new, size: 36, tooltip: 'إغلاق',
+                child: Text(title, textDirection: dDirOf(title), style: txt(17, weight: FontWeight.w700, height: 1.35)))),
+              DIconBtn(icon: tb.X.new, size: 36, tooltip: 'Close',
                 onPressed: () => Navigator.of(context).maybePop()),
             ]),
             const SizedBox(height: 14),
@@ -642,8 +642,8 @@ class DDialog extends StatelessWidget {
 /// Non-blocking feedback, used by copy, uploads, configuration and errors.
 class DFeedback {
   static void show(BuildContext context, String message, {DNoticeKind? kind}) {
-    final tone = kind ?? (message.startsWith('تعذر') || message.startsWith('فشل')
-        ? DNoticeKind.error : message.startsWith('تم ') ? DNoticeKind.success : DNoticeKind.info);
+    final tone = kind ?? (RegExp(r"^(Could not|Failed|Can't|Cannot)").hasMatch(message)
+        ? DNoticeKind.error : RegExp(r'^(Copied|Steered|Session pulled|Biometric lock (enabled|disabled))').hasMatch(message) ? DNoticeKind.success : DNoticeKind.info);
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
     messenger.hideCurrentSnackBar();
@@ -660,7 +660,7 @@ class DFeedback {
       content: Semantics(liveRegion: true, child: Row(children: [
         ic(_noticeIcon(tone), size: 18, color: _noticeColor(tone)),
         const SizedBox(width: 10),
-        Expanded(child: Text(message, maxLines: 4, overflow: TextOverflow.ellipsis,
+        Expanded(child: Text(message, textDirection: dDirOf(message), maxLines: 4, overflow: TextOverflow.ellipsis,
           style: txt(13, height: 1.5))),
       ])),
     ));
@@ -869,9 +869,9 @@ class DCodeBlock extends StatelessWidget {
               border: Border(bottom: BorderSide(color: D.borderSoft)),
             ),
             child: Row(children: [
-              Expanded(child: Text(lang, style: txt(11.5, color: D.faint, weight: FontWeight.w600, height: 1.2))),
+              Expanded(child: Text(lang, textDirection: dDirOf(lang), style: txt(11.5, color: D.faint, weight: FontWeight.w600, height: 1.2))),
               Tooltip(
-                message: 'نسخ',
+                message: 'Copy',
                 child: DPress(
                   onTap: onCopy,
                   haptic: Hx.select,
@@ -883,7 +883,7 @@ class DCodeBlock extends StatelessWidget {
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         ic(tb.Copy.new, size: 14, color: D.muted),
                         const SizedBox(width: 5),
-                        Text('Copy', style: txt(11.5, color: D.muted, weight: FontWeight.w500, height: 1.2)),
+                        Text('Copy', textDirection: TextDirection.ltr, style: txt(11.5, color: D.muted, weight: FontWeight.w500, height: 1.2)),
                       ]),
                     ),
                   ),
@@ -965,7 +965,7 @@ class DSegmented extends StatelessWidget {
                             style: txt(12.5,
                                 color: i == idx ? D.fg : D.muted,
                                 weight: i == idx ? FontWeight.w700 : FontWeight.w500),
-                            child: Text(labels[i], maxLines: 1, softWrap: false),
+                            child: Text(labels[i], textDirection: dDirOf(labels[i]), maxLines: 1, softWrap: false),
                           ),
                         ),
                       ),
@@ -1191,21 +1191,21 @@ class DModelChip extends StatelessWidget {
               // Very narrow (steer controls showing, large text): level only.
               child: LayoutBuilder(builder: (context, box) {
                 final brain = ic(tb.Brain.new, size: 13, color: effort == 'Default' ? D.muted : D.accent);
-                final level = Text(effort,
+                final level = Text(effort, textDirection: dDirOf(effort),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: txt(12.5, color: D.muted, weight: FontWeight.w500, height: 1.2));
                 if (box.maxWidth >= 230) {
                   return Row(mainAxisSize: MainAxisSize.min, children: [
                     Flexible(
-                      child: Text(name,
+                      child: Text(name, textDirection: dDirOf(name),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: txt(12.5, weight: FontWeight.w600, height: 1.2)),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Text('·', style: txt(12.5, color: D.muted, height: 1.2)),
+                      child: Text('·', textDirection: TextDirection.ltr, style: txt(12.5, color: D.muted, height: 1.2)),
                     ),
                     brain,
                     const SizedBox(width: 4),
@@ -1216,7 +1216,7 @@ class DModelChip extends StatelessWidget {
                 }
                 if (box.maxWidth >= 96) {
                   return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(name,
+                    Text(name, textDirection: dDirOf(name),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: txt(12, weight: FontWeight.w600, height: 1.15)),
@@ -1225,7 +1225,7 @@ class DModelChip extends StatelessWidget {
                       ic(tb.Brain.new, size: 11, color: effort == 'Default' ? D.muted : D.accent),
                       const SizedBox(width: 4),
                       Flexible(
-                        child: Text(effort,
+                        child: Text(effort, textDirection: dDirOf(effort),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: txt(10.5, color: D.muted, weight: FontWeight.w500, height: 1.15)),
@@ -1270,7 +1270,7 @@ class DSuggestion extends StatelessWidget {
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             ic(icon, size: 16, color: D.accent),
             const SizedBox(width: 10),
-            Flexible(child: Text(label, style: txt(13.5, height: 1.35))),
+            Flexible(child: Text(label, textDirection: dDirOf(label), style: txt(13.5, height: 1.35))),
           ]),
         ),
       ),
@@ -1323,7 +1323,7 @@ class _BackgroundStripState extends State<BackgroundStrip> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'النشاط في الخلفية (${items.length})',
+                  'Background activity (${items.length})', textDirection: dDirOf('Background activity (${items.length})'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: txt(12.5, weight: FontWeight.w600),
@@ -1332,12 +1332,12 @@ class _BackgroundStripState extends State<BackgroundStrip> {
               if (live > 0)
                 Padding(
                   padding: const EdgeInsetsDirectional.only(end: 6),
-                  child: Text('$live قيد التشغيل', style: txt(11.5, color: D.accent)),
+                  child: Text('$live running', textDirection: dDirOf('$live running'), style: txt(11.5, color: D.accent)),
                 )
               else if (items.any((i) => i.state == BackgroundState.failed))
                 Padding(
                   padding: const EdgeInsetsDirectional.only(end: 6),
-                  child: Text('يوجد فشل', style: txt(11.5, color: D.danger)),
+                  child: Text('Failures', textDirection: TextDirection.ltr, style: txt(11.5, color: D.danger)),
                 ),
               const SizedBox(width: 4),
                 AnimatedRotation(
@@ -1389,9 +1389,9 @@ class _BackgroundRow extends StatelessWidget {
   final VoidCallback onDismiss;
 
   String get _status => switch (item.state) {
-        BackgroundState.running => item.kind == 'subagent' ? 'يعمل الآن' : 'قيد التشغيل',
-        BackgroundState.done => 'انتهى',
-        BackgroundState.failed => item.exitCode == null ? 'فشل' : 'فشل (رمز ${item.exitCode})',
+        BackgroundState.running => item.kind == 'subagent' ? 'Working now' : 'Running',
+        BackgroundState.done => 'Done',
+        BackgroundState.failed => item.exitCode == null ? 'Failed' : 'Failed (code ${item.exitCode})',
       };
 
   Color get _tone => switch (item.state) {
@@ -1417,7 +1417,7 @@ class _BackgroundRow extends StatelessWidget {
         _status,
         if (item.subtitle.isNotEmpty && item.running) item.subtitle,
         if (item.model != null && item.model!.isNotEmpty) item.model!,
-        if (item.toolCount != null && item.toolCount! > 0) 'أدوات: ${item.toolCount}',
+        if (item.toolCount != null && item.toolCount! > 0) 'Tools: ${item.toolCount}',
       ].join(' · ');
 
   @override
@@ -1471,7 +1471,7 @@ class _BackgroundRow extends StatelessWidget {
                   DIconBtn(
                     icon: tb.PlayerStop.new,
                     size: 36,
-                    tooltip: 'إيقاف',
+                    tooltip: 'Stop',
                     tint: D.danger,
                     onPressed: onStop,
                   )
@@ -1479,7 +1479,7 @@ class _BackgroundRow extends StatelessWidget {
                   DIconBtn(
                     icon: tb.X.new,
                     size: 36,
-                    tooltip: 'تجاهل',
+                    tooltip: 'Dismiss',
                     onPressed: onDismiss,
                   ),
                 ]),

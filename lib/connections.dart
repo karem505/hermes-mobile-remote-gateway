@@ -176,6 +176,6 @@ class Connections {
 
   static String defaultName(String url) {
     final h = Uri.tryParse(url)?.host ?? '';
-    return h.isEmpty ? 'بوابة' : h;
+    return h.isEmpty ? 'Gateway' : h;
   }
 }

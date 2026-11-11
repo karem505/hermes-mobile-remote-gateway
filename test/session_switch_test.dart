@@ -8,11 +8,13 @@ class FakeApi extends HermesApi {
   FakeApi() : super('http://localhost', '', '');
   final transcripts = <String, List<Map<String, dynamic>>>{};
   int fetches = 0;
+  String? lastProfile;
   bool fail = false;
 
   @override
-  Future<List<Map<String, dynamic>>> sessionMessages(String storedId, {int limit = 300}) async {
+  Future<List<Map<String, dynamic>>> sessionMessages(String storedId, {int limit = 300, String? profile}) async {
     fetches++;
+    lastProfile = profile;
     if (fail) throw 'no route';
     return transcripts[storedId] ?? [];
   }

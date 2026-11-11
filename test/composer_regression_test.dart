@@ -35,7 +35,7 @@ void main() {
         await tester.pumpAndSettle();
         final button = action == 'send'
             ? find.byWidgetPredicate((w) => w is DIconBtn && w.primary)
-            : find.text(action == 'steer' ? 'توجيه' : 'إلى الطابور');
+            : find.text(action == 'steer' ? 'Steer' : 'Queue');
         expect(button.hitTestable(), findsOneWidget);
         await tester.tap(button);
         await tester.pumpAndSettle();
@@ -79,9 +79,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.queued.length, 1);
     expect(find.text('queued.pdf'), findsOneWidget);
-    expect(find.byTooltip('إعادة إرسال الطابور').hitTestable(), findsOneWidget);
+    expect(find.byTooltip('Resend queue').hitTestable(), findsOneWidget);
     gw.handler = null;
-    await tester.tap(find.byTooltip('إعادة إرسال الطابور'));
+    await tester.tap(find.byTooltip('Resend queue'));
     await tester.pumpAndSettle();
     expect(store.queued, isEmpty);
     expect(store.items.where((i) => i.kind == 'user').single.files, [
@@ -158,8 +158,8 @@ void main() {
       await tester.enterText(find.byType(TextField), 'توجيه مع مرفقات');
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.text('توجيه').hitTestable(), findsOneWidget);
-      expect(find.text('إلى الطابور').hitTestable(), findsOneWidget);
+      expect(find.text('Steer').hitTestable(), findsOneWidget);
+      expect(find.text('Queue').hitTestable(), findsOneWidget);
       // The model chip keeps the English Thinking level visible even when narrow.
       expect(find.text('Extra high').hitTestable(), findsOneWidget);
       expect(find.text('queued.pdf'), findsOneWidget);

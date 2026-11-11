@@ -60,7 +60,7 @@ void main() {
     expect([for (final c in gw.calls) c.method], ['prompt.submit', 'session.takeover', 'prompt.submit']);
     expect(store.pendingPull, isNull);
     expect(store.pullError, isNull);
-    expect(store.toast, 'تم سحب الجلسة من سطح المكتب إلى الجوال');
+    expect(store.toast, 'Session pulled from desktop to the phone');
     expect([for (final i in store.items) i.text], contains('مرحبا'));
   });
 
@@ -82,8 +82,8 @@ void main() {
 
     expect(store.pendingPull, isNotNull); // retryable
     expect(store.pulling, isFalse);
-    expect(store.pullError, contains('سطح المكتب'));
-    expect(store.pullError, contains('أوقف الدور'));
+    expect(store.pullError, contains('desktop'));
+    expect(store.pullError, contains('stop the turn'));
   });
 
   testWidgets('dismissing the offer clears it and shows no error', (tester) async {
@@ -113,6 +113,6 @@ void main() {
 
     expect(accepted, isFalse);
     expect(store.pendingPull, isNull);
-    expect(store.toast, contains('تعذر الإرسال'));
+    expect(store.toast, contains('Could not send'));
   });
 }

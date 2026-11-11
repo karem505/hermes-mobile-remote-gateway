@@ -45,18 +45,18 @@ void main() {
       ],
       active: 'a',
     );
-    expect(find.text('البوابات والاتصال'), findsOneWidget);
+    expect(find.text('Gateways & connection'), findsOneWidget);
     expect(find.text('الجهاز المحلي'), findsOneWidget);
     expect(find.text('الريموت جيت وي'), findsOneWidget);
     expect(find.text('https://gateway.example.com'), findsOneWidget);
-    expect(find.text('إضافة بوابة'), findsOneWidget);
+    expect(find.text('Add gateway'), findsOneWidget);
     // Exactly one active checkmark, on the active row.
     expect(find.byType(tb.CircleCheck), findsOneWidget);
   });
 
   testWidgets('without saved gateways the card still offers the add row', (tester) async {
     await pumpList(tester);
-    expect(find.text('إضافة بوابة'), findsOneWidget);
+    expect(find.text('Add gateway'), findsOneWidget);
     expect(find.byType(tb.CircleCheck), findsNothing);
   });
 
@@ -71,15 +71,15 @@ void main() {
     for (var i = 0; i < 8; i++) {
       await tester.pump(const Duration(milliseconds: 120));
     }
-    expect(find.textContaining('تعذر الاتصال بـ «B»'), findsOneWidget);
+    expect(find.textContaining('Could not connect to "B"'), findsOneWidget);
   });
 
   testWidgets('editor validates the three fields before saving', (tester) async {
     await tester.pumpWidget(const MaterialApp(home: ConnectionEditorPage()));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('إضافة واتصال'));
+    await tester.tap(find.text('Add & connect'));
     await tester.pumpAndSettle();
-    expect(find.text('أدخل عنوان الخادم.'), findsOneWidget);
+    expect(find.text('Enter the server address.'), findsOneWidget);
   });
 
   testWidgets('deleting from the editor confirms, removes the entry and pops deleted', (tester) async {
@@ -101,13 +101,13 @@ void main() {
     ));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(find.text('تعديل البوابة'), findsOneWidget);
+    expect(find.text('Edit gateway'), findsOneWidget);
 
-    await tester.tap(find.text('حذف البوابة'));
+    await tester.tap(find.text('Delete gateway'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('سيُحذف «بوابة قديمة»'), findsOneWidget);
+    expect(find.textContaining('"بوابة قديمة" will be removed'), findsOneWidget);
 
-    await tester.tap(find.text('حذف'));
+    await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect(popped, 'deleted');
     expect(await store.list(), isEmpty);
@@ -120,6 +120,6 @@ void main() {
     expect(find.text('الريموت'), findsOneWidget);
     expect(find.text('https://gateway.example.com'), findsOneWidget);
     expect(find.text('karem'), findsOneWidget);
-    expect(find.text('حذف البوابة'), findsOneWidget);
+    expect(find.text('Delete gateway'), findsOneWidget);
   });
 }

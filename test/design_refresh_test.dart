@@ -110,8 +110,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: MessageTile(item: item))));
     await tester.pumpAndSettle();
 
-    expect(find.text('فكّر لمدة 12 ثانية'), findsOneWidget);
-    await tester.tap(find.text('فكّر لمدة 12 ثانية'));
+    expect(find.text('Thought for 12s'), findsOneWidget);
+    await tester.tap(find.text('Thought for 12s'));
     await tester.pumpAndSettle();
     expect(find.text('checking the server logs first').hitTestable(), findsOneWidget);
   });

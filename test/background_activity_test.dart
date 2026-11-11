@@ -336,21 +336,21 @@ void main() {
     );
     await settle(tester);
 
-    expect(find.textContaining('النشاط في الخلفية'), findsOneWidget);
+    expect(find.textContaining('Background activity'), findsOneWidget);
     expect(find.textContaining('3'), findsWidgets);
     expect(find.text('Audit the payment service'), findsNothing);
 
-    await tester.tap(find.textContaining('النشاط في الخلفية'));
+    await tester.tap(find.textContaining('Background activity'));
     await settle(tester);
 
     expect(find.text('Audit the payment service'), findsOneWidget);
     expect(find.textContaining('pytest -q'), findsOneWidget);
 
-    await tester.tap(find.byWidgetPredicate((w) => w is DIconBtn && w.tooltip == 'إيقاف').first);
+    await tester.tap(find.byWidgetPredicate((w) => w is DIconBtn && w.tooltip == 'Stop').first);
     await settle(tester);
     expect(stopped, ['p-run']);
 
-    await tester.tap(find.byWidgetPredicate((w) => w is DIconBtn && w.tooltip == 'تجاهل').first);
+    await tester.tap(find.byWidgetPredicate((w) => w is DIconBtn && w.tooltip == 'Dismiss').first);
     await settle(tester);
     expect(dismissed, ['p-bad']);
     expect(tester.takeException(), isNull);
@@ -379,14 +379,14 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.textContaining('النشاط في الخلفية'));
+    await tester.tap(find.textContaining('Background activity'));
     await settle(tester);
     expect(find.textContaining('connection refused'), findsNothing);
 
     await tester.tap(find.textContaining('deploy.sh'));
     await settle(tester);
     expect(find.textContaining('connection refused'), findsOneWidget);
-    expect(find.textContaining('رمز 2'), findsOneWidget);
+    expect(find.textContaining('code 2'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.0
+
+Bot View and an English UI.
+
+### Added
+- **Bot View** (drawer → *Bots* tab, the default), like Hermes Desktop's BOTS tab: one row per Hermes profile with its avatar face (shape and color), title, the last message and its age. Tapping a bot opens that profile's canonical *Bot Chat* and you chat with it with the normal composer and streaming. Data comes from `profiles.list` (`ui_meta['hermes-bots']` and `canonical_session`), polled every 15 s; no server change is needed.
+- Canonical Bot Chat resolution follows the desktop: the profile's session titled exactly `Bot Chat` (`session.list {profile, title, include_hidden}`), opened at its compression-lineage tip. A failed or inconsistent lookup never creates a second chat; a bot with no chat yet gets a hidden one, titled immediately. Bot chats resume with the owning `profile` over both `session.resume` and the REST transcript.
+- Each bot row shows **Working…** (breathing accent dot) or **Idle** (grey), and an open bot chat shows the same status under its title. A bot counts as working when its Bot Chat has a live non-idle session on the gateway (`session.active_list`, event-driven for the open chat), a kanban/tool worker heartbeat is under 150 s old, or it wrote a message in the last 90 s (the desktop's own "active now" rule; turns hosted by other backend processes are not visible to this gateway otherwise). The roster refreshes every 6 s.
+
+### Changed
+- The whole app UI is now English. The layout stays right-to-left as before (drawer opens from the right, buttons keep their positions); English strings carry their own left-to-right text direction, and message content and bot titles keep theirs.
+
+### Removed
+- The "Support the project" (GitHub Sponsors) entry in the drawer footer, together with its native `openUrl` channel and the `links.dart` helper. The README sponsor badges are unchanged.
+
 ## 1.3.2
 
 ### Added
